@@ -19,6 +19,7 @@ type Goal = {
   progress: number;
   creator: string;
   assignees: string[];
+  assignee?: string;
   signature: string;
   priority: Priority;
   completedAt?: string;
