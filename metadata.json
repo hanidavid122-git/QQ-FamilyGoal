@@ -1,0 +1,5 @@
+{
+  "name": "Family Goal Tracker",
+  "description": "A family goal sharing and tracking system with local storage.",
+  "requestFramePermissions": []
+}
