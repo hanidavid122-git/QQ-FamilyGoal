@@ -135,10 +135,39 @@ function LineChart({ data }: { data: number[] }) {
 }
 
 export default function App() {
-  const [goals, setGoals] = useState<Goal[]>(() => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'));
-  const [txs, setTxs] = useState<Transaction[]>(() => JSON.parse(localStorage.getItem(TX_KEY) || '[]'));
-  const [achs, setAchs] = useState<Achievement[]>(() => JSON.parse(localStorage.getItem(ACH_KEY) || '[]'));
-  const [checkIns, setCheckIns] = useState<CheckIn[]>(() => JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]'));
+  console.log("App is mounting...");
+  const [goals, setGoals] = useState<Goal[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+      console.error("Failed to parse goals", e);
+      return [];
+    }
+  });
+  const [txs, setTxs] = useState<Transaction[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(TX_KEY) || '[]');
+    } catch (e) {
+      console.error("Failed to parse transactions", e);
+      return [];
+    }
+  });
+  const [achs, setAchs] = useState<Achievement[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
+    } catch (e) {
+      console.error("Failed to parse achievements", e);
+      return [];
+    }
+  });
+  const [checkIns, setCheckIns] = useState<CheckIn[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
+    } catch (e) {
+      console.error("Failed to parse check-ins", e);
+      return [];
+    }
+  });
 
   const [filter, setFilter] = useState<FilterType>('全部');
   const [lbTab, setLbTab] = useState<'total' | 'weekly' | 'daily'>('total');
@@ -156,7 +185,10 @@ export default function App() {
 
   const memberStats = useMemo(() => {
     return ROLES.map(role => {
-      const mGoals = goals.filter(g => g.assignees?.includes(role) || g.assignee === role);
+      const mGoals = goals.filter(g => {
+        const assignees = g.assignees || (g.assignee ? [g.assignee] : []);
+        return assignees.includes(role);
+      });
       const active = mGoals.filter(g => g.progress < 100);
       const mTx = txs.filter(t => t.member === role);
       const earned = mTx.filter(t => t.type === 'earned').reduce((s, t) => s + t.amount, 0);
@@ -172,7 +204,7 @@ export default function App() {
       const now = new Date().getTime();
       mTx.filter(t => t.type === 'earned').forEach(t => {
         const w = Math.floor((now - new Date(t.date).getTime()) / 604800000);
-        if (w < 4) weekly[3 - w] += t.amount;
+        if (w >= 0 && w < 4) weekly[3 - w] += t.amount;
       });
 
       let warning: 'red' | 'yellow' | 'green' = 'green';
@@ -189,14 +221,17 @@ export default function App() {
   useEffect(() => {
     const newAchs: Achievement[] = [], newTxs: Transaction[] = [];
     const now = new Date().toISOString();
+    
     ROLES.forEach(role => {
       const stats = memberStats.find(m => m.role === role);
       if (!stats) return;
+      
       const mGoals = goals.filter(g => (g.assignees?.includes(role) || g.assignee === role) && g.progress === 100);
       const mAchIds = achs.filter(a => a.member === role).map(a => a.achId);
       
       ACHIEVEMENTS.forEach(def => {
         if (mAchIds.includes(def.id)) return;
+        
         let unlocked = false;
         if (def.id === 'a1' && mGoals.length >= 1) unlocked = true;
         if (def.id === 'a2' && stats.earned >= 50) unlocked = true;
@@ -205,14 +240,21 @@ export default function App() {
         if (def.id === 'a5' && mGoals.filter(g => g.priority === '高').length >= 3) unlocked = true;
         
         if (unlocked) {
-          newAchs.push({ id: crypto.randomUUID(), member: role, achId: def.id, date: now });
-          if (def.bonus) newTxs.push({ id: crypto.randomUUID(), date: now, member: role, amount: def.bonus, reason: `解锁成就: ${def.name}`, type: 'earned' });
+          const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+          newAchs.push({ id: uuid, member: role, achId: def.id, date: now });
+          if (def.bonus) {
+            const txUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+            newTxs.push({ id: txUuid, date: now, member: role, amount: def.bonus, reason: `解锁成就: ${def.name}`, type: 'earned' });
+          }
         }
       });
     });
-    if (newAchs.length) setAchs(p => [...p, ...newAchs]);
-    if (newTxs.length) setTxs(p => [...p, ...newTxs]);
-  }, [goals, txs, achs, memberStats]);
+
+    if (newAchs.length > 0 || newTxs.length > 0) {
+      if (newAchs.length > 0) setAchs(p => [...p, ...newAchs]);
+      if (newTxs.length > 0) setTxs(p => [...p, ...newTxs]);
+    }
+  }, [goals, memberStats]); // Removed txs and achs from dependencies to prevent infinite loop
 
   const handleCheckIn = (role: string) => {
     const today = new Date().toISOString().split('T')[0];
