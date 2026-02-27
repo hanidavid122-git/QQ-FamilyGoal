@@ -5,7 +5,7 @@ import {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle
 } from 'lucide-react';
 
 type Priority = '高' | '中' | '低';
@@ -23,6 +23,7 @@ type Goal = {
   signature: string;
   priority: Priority;
   completedAt?: string;
+  confirmations?: Record<string, boolean>;
 };
 
 type Transaction = {
@@ -46,23 +47,40 @@ type CheckIn = {
   date: string;
 };
 
+type Reward = {
+  id: string;
+  name: string;
+  cost: number;
+  description?: string;
+  isActive: boolean;
+  isCustom: boolean;
+  iconName?: string;
+};
+
 type FilterType = '全部' | '进行中' | '已完成';
 
 const STORAGE_KEY = 'family_goals_data';
 const TX_KEY = 'family_goals_txs';
 const ACH_KEY = 'family_goals_achs';
 const CHECKIN_KEY = 'family_goals_checkins';
+const REWARDS_KEY = 'family_goals_rewards';
+const CURRENT_USER_KEY = 'family_goals_current_user';
 
 const ROLES = ['爸爸', '妈妈', '姐姐', '妹妹'];
+const ALL_ROLES = [...ROLES, '管理员'];
 const PRIORITIES: Priority[] = ['高', '中', '低'];
 
-const REWARDS = [
-  { id: 'r1', name: '选择家庭电影', cost: 100, icon: Film },
-  { id: 'r2', name: '免做家务一天', cost: 200, icon: Target },
-  { id: 'r3', name: '自选家庭出游', cost: 300, icon: Car },
-  { id: 'r4', name: '最爱晚餐点菜权', cost: 150, icon: Utensils },
-  { id: 'r5', name: '额外游戏时间', cost: 50, icon: Gamepad }
+const DEFAULT_REWARDS: Reward[] = [
+  { id: 'r1', name: '选择家庭电影', cost: 100, isActive: true, isCustom: false, iconName: 'Film' },
+  { id: 'r2', name: '免做家务一天', cost: 200, isActive: true, isCustom: false, iconName: 'Target' },
+  { id: 'r3', name: '自选家庭出游', cost: 300, isActive: true, isCustom: false, iconName: 'Car' },
+  { id: 'r4', name: '最爱晚餐点菜权', cost: 150, isActive: true, isCustom: false, iconName: 'Utensils' },
+  { id: 'r5', name: '额外游戏时间', cost: 50, isActive: true, isCustom: false, iconName: 'Gamepad' }
 ];
+
+const ICONS: Record<string, React.ElementType> = {
+  Film, Target, Car, Utensils, Gamepad, Gift
+};
 
 const ACHIEVEMENTS = [
   { id: 'a1', name: '首个目标', desc: '完成第一个目标', bonus: 5, icon: Flag, color: 'text-blue-500' },
@@ -135,39 +153,36 @@ function LineChart({ data }: { data: number[] }) {
 }
 
 export default function App() {
-  console.log("App is mounting...");
+  const [currentUser, setCurrentUser] = useState<string | null>(() => {
+    return localStorage.getItem(CURRENT_USER_KEY);
+  });
   const [goals, setGoals] = useState<Goal[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    } catch (e) {
-      console.error("Failed to parse goals", e);
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
   });
   const [txs, setTxs] = useState<Transaction[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(TX_KEY) || '[]');
-    } catch (e) {
-      console.error("Failed to parse transactions", e);
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(TX_KEY) || '[]'); } catch { return []; }
   });
   const [achs, setAchs] = useState<Achievement[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
-    } catch (e) {
-      console.error("Failed to parse achievements", e);
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(ACH_KEY) || '[]'); } catch { return []; }
   });
   const [checkIns, setCheckIns] = useState<CheckIn[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
-    } catch (e) {
-      console.error("Failed to parse check-ins", e);
-      return [];
+    try { return JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]'); } catch { return []; }
+  });
+  const [rewards, setRewards] = useState<Reward[]>(() => {
+    try { 
+      const stored = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null'); 
+      return stored || DEFAULT_REWARDS;
+    } catch { 
+      return DEFAULT_REWARDS; 
     }
   });
+
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(goals)); }, [goals]);
+  useEffect(() => { localStorage.setItem(TX_KEY, JSON.stringify(txs)); }, [txs]);
+  useEffect(() => { localStorage.setItem(ACH_KEY, JSON.stringify(achs)); }, [achs]);
+  useEffect(() => { localStorage.setItem(CHECKIN_KEY, JSON.stringify(checkIns)); }, [checkIns]);
+  useEffect(() => { localStorage.setItem(REWARDS_KEY, JSON.stringify(rewards)); }, [rewards]);
+  useEffect(() => { if (currentUser) localStorage.setItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
 
   const [filter, setFilter] = useState<FilterType>('全部');
   const [lbTab, setLbTab] = useState<'total' | 'weekly' | 'daily'>('total');
@@ -177,11 +192,11 @@ export default function App() {
   const [goalToDelete, setGoalToDelete] = useState<string | null>(null);
   const [historyModal, setHistoryModal] = useState<string | null>(null);
   const [rewardMember, setRewardMember] = useState(ROLES[0]);
-
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(goals)); }, [goals]);
-  useEffect(() => { localStorage.setItem(TX_KEY, JSON.stringify(txs)); }, [txs]);
-  useEffect(() => { localStorage.setItem(ACH_KEY, JSON.stringify(achs)); }, [achs]);
-  useEffect(() => { localStorage.setItem(CHECKIN_KEY, JSON.stringify(checkIns)); }, [checkIns]);
+  
+  const [isDataModalOpen, setIsDataModalOpen] = useState(false);
+  const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
+  const [isRewardEditModalOpen, setIsRewardEditModalOpen] = useState(false);
+  const [editingReward, setEditingReward] = useState<Reward | null>(null);
 
   const memberStats = useMemo(() => {
     return ROLES.map(role => {
@@ -259,8 +274,18 @@ export default function App() {
   const handleCheckIn = (role: string) => {
     const today = new Date().toISOString().split('T')[0];
     if (!checkIns.some(c => c.member === role && c.date === today)) {
-      setCheckIns(p => [...p, { member: role, date: today }]);
-      setTxs(p => [...p, { id: crypto.randomUUID(), date: new Date().toISOString(), member: role, amount: 1, reason: '每日签到', type: 'earned' }]);
+      const newCheckIn = { member: role, date: today };
+      const newTx: Transaction = { 
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), 
+        date: new Date().toISOString(), 
+        member: role, 
+        amount: 1, 
+        reason: '每日签到', 
+        type: 'earned' 
+      };
+      
+      setCheckIns(p => [...p, newCheckIn]);
+      setTxs(p => [...p, newTx]);
     }
   };
 
@@ -268,36 +293,65 @@ export default function App() {
     const goal = goals.find(g => g.id === id);
     if (!goal) return;
     const newProg = Math.min(goal.progress + 10, 100);
-    const isCompleted = newProg === 100 && goal.progress < 100;
     const updated = { ...goal, progress: newProg };
-    
-    if (isCompleted) {
-      updated.completedAt = new Date().toISOString();
-      const now = new Date().toISOString();
-      const newTx: Transaction[] = [];
-      const isEarly = new Date() < new Date(goal.endDate);
-      const assignees = goal.assignees || [goal.assignee];
-      const isTeam = assignees.length > 1;
-      
-      assignees.forEach(member => {
-        newTx.push({ id: crypto.randomUUID(), date: now, member, amount: 10, reason: `完成目标: ${goal.name}`, type: 'earned' });
-        if (isEarly) newTx.push({ id: crypto.randomUUID(), date: now, member, amount: 3, reason: `提前完成`, type: 'earned' });
-        if (isTeam) newTx.push({ id: crypto.randomUUID(), date: now, member, amount: 5, reason: `团队协作`, type: 'earned' });
-        
-        const mCompleted = goals.filter(g => (g.assignees?.includes(member) || g.assignee === member) && g.progress === 100);
-        if (mCompleted.length % 3 === 2) {
-          newTx.push({ id: crypto.randomUUID(), date: now, member, amount: 8, reason: `连续完成3个目标`, type: 'earned' });
-        }
-      });
-      setTxs(p => [...p, ...newTx]);
-    }
     setGoals(goals.map(g => g.id === id ? updated : g));
   };
 
-  const handleRedeem = (member: string, reward: typeof REWARDS[0]) => {
+  const handleConfirmCompletion = (id: string, member: string) => {
+    const goal = goals.find(g => g.id === id);
+    if (!goal) return;
+    
+    const confirmations = { ...(goal.confirmations || {}), [member]: true };
+    const allConfirmed = ROLES.every(r => confirmations[r]);
+    
+    const updated = { ...goal, confirmations };
+    
+    if (allConfirmed && !goal.completedAt) {
+      updated.completedAt = new Date().toISOString();
+      updated.progress = 100;
+      
+      const now = new Date().toISOString();
+      const newTxs: Transaction[] = [];
+      const isEarly = new Date() < new Date(goal.endDate);
+      const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
+      const isTeam = assignees.length > 1;
+      
+      assignees.forEach(m => {
+        const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+        newTxs.push({ id: uuid, date: now, member: m, amount: 10, reason: `完成目标: ${goal.name}`, type: 'earned' });
+        if (isEarly) {
+          const earlyUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+          newTxs.push({ id: earlyUuid, date: now, member: m, amount: 3, reason: `提前完成`, type: 'earned' });
+        }
+        if (isTeam) {
+          const teamUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+          newTxs.push({ id: teamUuid, date: now, member: m, amount: 5, reason: `团队协作`, type: 'earned' });
+        }
+        
+        const mCompleted = goals.filter(g => (g.assignees?.includes(m) || g.assignee === m) && g.completedAt);
+        if (mCompleted.length % 3 === 2) {
+          const streakUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+          newTxs.push({ id: streakUuid, date: now, member: m, amount: 8, reason: `连续完成3个目标`, type: 'earned' });
+        }
+      });
+      setTxs(p => [...p, ...newTxs]);
+    }
+    
+    setGoals(goals.map(g => g.id === id ? updated : g));
+  };
+
+  const handleRedeem = (member: string, reward: Reward) => {
     const stats = memberStats.find(m => m.role === member);
     if (stats && stats.pts >= reward.cost) {
-      setTxs(p => [...p, { id: crypto.randomUUID(), date: new Date().toISOString(), member, amount: reward.cost, reason: `兑换奖励: ${reward.name}`, type: 'redeemed' }]);
+      const newTx: Transaction = { 
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), 
+        date: new Date().toISOString(), 
+        member, 
+        amount: reward.cost, 
+        reason: `兑换奖励: ${reward.name}`, 
+        type: 'redeemed' 
+      };
+      setTxs(p => [...p, newTx]);
     }
   };
 
@@ -308,13 +362,82 @@ export default function App() {
   };
 
   const handleSaveGoal = (goalData: Omit<Goal, 'id'>) => {
+    const id = editingGoal ? editingGoal.id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
+    const newGoal = { ...goalData, id };
     if (editingGoal) {
-      setGoals(goals.map(g => g.id === editingGoal.id ? { ...goalData, id: g.id } : g));
+      setGoals(goals.map(g => g.id === editingGoal.id ? newGoal : g));
     } else {
-      setGoals([...goals, { ...goalData, id: crypto.randomUUID() }]);
+      setGoals([...goals, newGoal]);
     }
     setIsModalOpen(false);
     setEditingGoal(null);
+  };
+
+  const handleExport = () => {
+    const data = {
+      appVersion: "1.1.0",
+      goals,
+      txs,
+      achs,
+      checkIns,
+      rewards
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `family-goals-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        
+        // Version compatibility check
+        const version = data.appVersion || '1.0.0';
+        let importedGoals = data.goals || [];
+        let importedRewards = data.rewards || DEFAULT_REWARDS;
+        
+        // Migrate from older versions
+        if (version !== '1.1.0') {
+          // Add confirmations object if missing
+          importedGoals = importedGoals.map((g: any) => ({
+            ...g,
+            confirmations: g.confirmations || {},
+            assignees: g.assignees || (g.assignee ? [g.assignee] : ['爸爸'])
+          }));
+        }
+
+        if (window.confirm(`检测到备份文件版本: ${version}\n警告：导入数据将覆盖当前所有记录！是否继续？`)) {
+          setGoals(importedGoals);
+          setTxs(data.txs || []);
+          setAchs(data.achs || []);
+          setCheckIns(data.checkIns || []);
+          setRewards(importedRewards);
+          setIsDataModalOpen(false);
+          alert('数据导入成功！');
+        }
+      } catch (err) {
+        alert('导入失败：无效的 JSON 文件');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleToggleRewardActive = (id: string) => {
+    setRewards(rewards.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r));
+  };
+
+  const handleDeleteReward = (id: string) => {
+    setRewards(rewards.filter(r => r.id !== id));
   };
 
   const leaderboard = useMemo(() => {
@@ -336,15 +459,69 @@ export default function App() {
     return true;
   });
 
+  const isAdmin = currentUser === '管理员';
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans text-stone-800">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center"
+        >
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Users className="w-8 h-8 text-orange-500" />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">欢迎来到家庭目标</h1>
+          <p className="text-stone-500 mb-8">请选择您的角色。注意：角色选择后将无法更改。</p>
+          
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {ROLES.map(role => (
+              <button
+                key={role}
+                onClick={() => setCurrentUser(role)}
+                className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
+              >
+                {role}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setCurrentUser('管理员')}
+            className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Settings className="w-5 h-5" />
+            管理员 (可管理所有项目)
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-orange-50 font-sans text-stone-800 pb-20">
       <header className="bg-white shadow-sm border-b border-orange-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 text-orange-600">
             <Heart className="w-6 h-6 fill-current" />
-            <h1 className="text-xl font-bold tracking-tight">家庭目标</h1>
+            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
+              家庭目标
+              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v1.1.0</span>
+            </h1>
           </div>
           <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-stone-600 bg-stone-100 px-3 py-1 rounded-full hidden sm:inline-block">
+              当前角色: {currentUser}
+            </span>
+            {isAdmin && (
+              <button 
+                onClick={() => setIsDataModalOpen(true)}
+                className="p-2 text-stone-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors cursor-pointer"
+                title="数据管理"
+              >
+                <Database className="w-5 h-5" />
+              </button>
+            )}
             <div className="flex bg-stone-100 rounded-full p-1">
               {ROLES.map(r => {
                 const checked = checkIns.some(c => c.member === r && c.date === new Date().toISOString().split('T')[0]);
@@ -361,13 +538,15 @@ export default function App() {
                 );
               })}
             </div>
-            <button 
-              onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
-              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-sm transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">新建目标</span>
-            </button>
+            {isAdmin && (
+              <button 
+                onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
+                className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-sm transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">新建目标</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -545,19 +724,24 @@ export default function App() {
                 <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
                   <Gift className="w-5 h-5 text-pink-500" /> 积分兑换
                 </h2>
-                <select 
-                  value={rewardMember} 
-                  onChange={e => setRewardMember(e.target.value)} 
-                  className="text-xs border border-stone-200 rounded-md p-1 outline-none bg-white cursor-pointer"
-                >
-                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setIsRewardModalOpen(true)} className="text-sm text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1 cursor-pointer">
+                    <Settings className="w-4 h-4" /> 管理奖励
+                  </button>
+                  <select 
+                    value={rewardMember} 
+                    onChange={e => setRewardMember(e.target.value)} 
+                    className="text-xs border border-stone-200 rounded-md p-1 outline-none bg-white cursor-pointer"
+                  >
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="space-y-3">
-                {REWARDS.map(r => {
+                {rewards.filter(r => r.isActive).map(r => {
                   const pts = memberStats.find(m => m.role === rewardMember)?.pts || 0;
                   const can = pts >= r.cost;
-                  const Icon = r.icon;
+                  const Icon = r.iconName && ICONS[r.iconName] ? ICONS[r.iconName] : Gift;
                   return (
                     <div key={r.id} className={`p-3 rounded-xl border ${can ? 'border-pink-200 bg-pink-50' : 'border-stone-100 bg-stone-50'} flex items-center justify-between`}>
                       <div className="flex items-center gap-3">
@@ -565,7 +749,10 @@ export default function App() {
                           <Icon className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-stone-800">{r.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-stone-800">{r.name}</p>
+                            {r.isCustom && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">自定义</span>}
+                          </div>
                           <p className="text-[10px] text-stone-500">{r.cost} 积分</p>
                         </div>
                       </div>
@@ -617,7 +804,9 @@ export default function App() {
                 <GoalCard 
                   key={goal.id} 
                   goal={goal} 
+                  currentUser={currentUser}
                   onAddProgress={() => handleAddProgress(goal.id)}
+                  onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
                   onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
                   onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
                 />
@@ -649,7 +838,166 @@ export default function App() {
             onClose={() => setHistoryModal(null)}
           />
         )}
+        {isDataModalOpen && (
+          <DataManagementModal
+            onClose={() => setIsDataModalOpen(false)}
+            onExport={handleExport}
+            onImport={handleImport}
+          />
+        )}
+        {isRewardModalOpen && (
+          <RewardManagementModal
+            rewards={rewards}
+            onClose={() => setIsRewardModalOpen(false)}
+            onToggleActive={handleToggleRewardActive}
+            onDelete={handleDeleteReward}
+            onEdit={(r) => { setEditingReward(r); setIsRewardEditModalOpen(true); }}
+            onAdd={() => { setEditingReward(null); setIsRewardEditModalOpen(true); }}
+          />
+        )}
+        {isRewardEditModalOpen && (
+          <RewardEditModal
+            reward={editingReward}
+            onClose={() => setIsRewardEditModalOpen(false)}
+            onSave={(r) => {
+              if (editingReward) {
+                setRewards(rewards.map(rw => rw.id === editingReward.id ? { ...rw, ...r } : rw));
+              } else {
+                setRewards([...rewards, { ...r, id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), isCustom: true, isActive: true }]);
+              }
+              setIsRewardEditModalOpen(false);
+            }}
+          />
+        )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function DataManagementModal({ onClose, onExport, onImport }: { onClose: () => void, onExport: () => void, onImport: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+        <h2 className="text-xl font-bold text-stone-900 mb-4 flex items-center gap-2">
+          <Database className="w-5 h-5 text-orange-500" />
+          数据管理
+        </h2>
+        <p className="text-sm text-stone-500 mb-6">
+          升级前请导出数据以防丢失。导入数据将覆盖当前所有记录。
+        </p>
+        
+        <div className="space-y-4">
+          <button onClick={onExport} className="w-full flex items-center justify-center gap-2 bg-stone-100 hover:bg-stone-200 text-stone-700 py-3 rounded-xl font-medium transition-colors cursor-pointer">
+            <Download className="w-5 h-5" />
+            导出数据 (备份)
+          </button>
+          
+          <label className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-medium transition-colors cursor-pointer">
+            <Upload className="w-5 h-5" />
+            导入数据 (恢复)
+            <input type="file" accept=".json" className="hidden" onChange={onImport} />
+          </label>
+        </div>
+        
+        <div className="mt-6 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer">关闭</button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function RewardManagementModal({ rewards, onClose, onToggleActive, onDelete, onEdit, onAdd }: { rewards: Reward[], onClose: () => void, onToggleActive: (id: string) => void, onDelete: (id: string) => void, onEdit: (r: Reward) => void, onAdd: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
+            <Gift className="w-5 h-5 text-pink-500" />
+            管理奖励
+          </h2>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 cursor-pointer">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        
+        <div className="space-y-4 mb-6">
+          {rewards.map(reward => (
+            <div key={reward.id} className={`flex items-center justify-between p-4 rounded-xl border ${reward.isActive ? 'bg-stone-50 border-stone-200' : 'bg-stone-100 border-stone-200 opacity-60'}`}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-stone-900">{reward.name}</h3>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${reward.isCustom ? 'bg-purple-100 text-purple-700' : 'bg-stone-200 text-stone-700'}`}>
+                    {reward.isCustom ? '自定义' : '默认'}
+                  </span>
+                  {!reward.isActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700">已停用</span>}
+                </div>
+                <p className="text-sm text-stone-500 mt-1">消耗: {reward.cost} 积分</p>
+                {reward.description && <p className="text-xs text-stone-400 mt-1">{reward.description}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => onToggleActive(reward.id)} className="p-2 text-stone-500 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer" title={reward.isActive ? '停用' : '启用'}>
+                  {reward.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                {reward.isCustom && (
+                  <>
+                    <button onClick={() => onEdit(reward)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => onDelete(reward.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <button onClick={onAdd} className="w-full py-3 border-2 border-dashed border-stone-300 text-stone-500 rounded-xl hover:border-orange-500 hover:text-orange-500 transition-colors font-medium flex items-center justify-center gap-2 cursor-pointer">
+          <Plus className="w-5 h-5" /> 添加自定义奖励
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
+function RewardEditModal({ reward, onClose, onSave }: { reward: Reward | null, onClose: () => void, onSave: (r: Omit<Reward, 'id' | 'isActive' | 'isCustom'>) => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+        <h2 className="text-xl font-bold text-stone-900 mb-4">
+          {reward ? '编辑奖励' : '添加自定义奖励'}
+        </h2>
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          const formData = new FormData(e.currentTarget);
+          onSave({
+            name: formData.get('name') as string,
+            cost: parseInt(formData.get('cost') as string, 10),
+            description: formData.get('description') as string,
+          });
+        }}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">奖励名称</label>
+              <input name="name" defaultValue={reward?.name} required className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="例如：全家看电影" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">消耗积分</label>
+              <input name="cost" type="number" min="1" defaultValue={reward?.cost || 50} required className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">描述 (可选)</label>
+              <textarea name="description" defaultValue={reward?.description} className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" rows={2} />
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer">取消</button>
+            <button type="submit" className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors font-medium cursor-pointer">保存</button>
+          </div>
+        </form>
+      </motion.div>
     </div>
   );
 }
@@ -668,8 +1016,9 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
   );
 }
 
-function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAddProgress: () => void, onEdit: () => void, onDelete: () => void }) {
-  const isCompleted = goal.progress >= 100;
+function GoalCard({ goal, currentUser, onAddProgress, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, onAddProgress: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
+  const isCompleted = goal.progress >= 100 && goal.completedAt !== undefined;
+  const isPendingConfirmation = goal.progress >= 100 && !goal.completedAt;
   
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -681,6 +1030,14 @@ function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAdd
   const isOverdue = diffDays < 0 && !isCompleted;
   const warningStatus = getWarningStatus(goal);
 
+  const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
+  const confirmations = goal.confirmations || {};
+  const confirmedCount = ROLES.filter(r => confirmations[r]).length;
+
+  const isAdmin = currentUser === '管理员';
+  const canEdit = isAdmin;
+  const canAddProgress = isAdmin || assignees.includes(currentUser);
+
   return (
     <motion.div 
       layout
@@ -688,7 +1045,7 @@ function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAdd
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col ${
-        isCompleted ? 'border-emerald-200' : isOverdue ? 'border-red-200' : 'border-stone-200'
+        isCompleted ? 'border-emerald-200' : isPendingConfirmation ? 'border-blue-200' : isOverdue ? 'border-red-200' : 'border-stone-200'
       }`}
     >
       <div className="p-6 flex-grow">
@@ -712,21 +1069,39 @@ function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAdd
             </div>
             <p className="text-sm text-stone-500 line-clamp-2">{goal.description}</p>
           </div>
-          <div className="flex gap-1 ml-4 shrink-0">
-            <button onClick={onEdit} className="p-2 text-stone-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors cursor-pointer">
-              <Edit2 className="w-4 h-4" />
-            </button>
-            <button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
+          {canEdit && (
+            <div className="flex gap-1 ml-4 shrink-0">
+              <button onClick={onEdit} className="p-2 text-stone-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors cursor-pointer">
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3 mb-6">
           <div className="flex items-center gap-2 text-sm text-stone-600">
             <Users className="w-4 h-4 text-stone-400 shrink-0" />
-            <span>责任人: {(goal.assignees || [goal.assignee]).join(', ')}</span>
+            <span>责任人: {assignees.join(', ')}</span>
           </div>
+          {isPendingConfirmation && (
+            <div className="flex flex-col gap-2 text-sm text-stone-600">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
+                <span className="text-blue-600 font-medium">等待全家确认 ({confirmedCount}/4):</span>
+              </div>
+              <div className="flex flex-wrap gap-2 pl-6">
+                {ROLES.map(r => (
+                  <div key={r} className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${confirmations[r] ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-stone-50 border-stone-200 text-stone-600'}`}>
+                    {confirmations[r] ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3 text-stone-300" />}
+                    {r}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-sm text-stone-600">
             <Calendar className="w-4 h-4 text-stone-400 shrink-0" />
             <span>{goal.startDate} 至 {goal.endDate}</span>
@@ -734,6 +1109,8 @@ function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAdd
           <div className="flex items-center gap-2 text-sm font-medium">
             {isCompleted ? (
               <span className="text-emerald-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已完成</span>
+            ) : isPendingConfirmation ? (
+              <span className="text-blue-600 flex items-center gap-1"><Clock className="w-4 h-4" /> 待确认 ({confirmedCount}/4)</span>
             ) : isOverdue ? (
               <span className="text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> 已逾期 {Math.abs(diffDays)} 天</span>
             ) : (
@@ -749,7 +1126,7 @@ function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAdd
           </div>
           <div className="h-3 w-full bg-stone-100 rounded-full overflow-hidden">
             <motion.div 
-              className={`h-full rounded-full ${isCompleted ? 'bg-emerald-500' : 'bg-orange-500'}`}
+              className={`h-full rounded-full ${isCompleted ? 'bg-emerald-500' : isPendingConfirmation ? 'bg-blue-500' : 'bg-orange-500'}`}
               initial={{ width: 0 }}
               animate={{ width: `${goal.progress}%` }}
               transition={{ duration: 0.5, ease: "easeOut" }}
@@ -759,13 +1136,37 @@ function GoalCard({ goal, onAddProgress, onEdit, onDelete }: { goal: Goal, onAdd
       </div>
       
       {!isCompleted && (
-        <div className="px-6 py-4 bg-stone-50 border-t border-stone-100">
-          <button 
-            onClick={onAddProgress}
-            className="w-full py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> 增加 10% 进度
-          </button>
+        <div className="px-6 py-4 bg-stone-50 border-t border-stone-100 flex flex-col gap-2">
+          {goal.progress < 100 && canAddProgress && (
+            <button 
+              onClick={onAddProgress}
+              className="w-full py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> 增加 10% 进度
+            </button>
+          )}
+          {goal.progress >= 100 && !isCompleted && (
+            <div className="flex flex-wrap gap-2">
+              {ROLES.map(r => {
+                if (confirmations[r]) return null;
+                const canConfirm = isAdmin || r === currentUser;
+                return (
+                  <button 
+                    key={r}
+                    onClick={() => canConfirm && onConfirm(r)}
+                    disabled={!canConfirm}
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-1 ${
+                      canConfirm 
+                        ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
+                        : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> {r} 确认完成
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </motion.div>
