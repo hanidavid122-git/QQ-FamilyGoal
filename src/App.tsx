@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from './supabase';
 import { 
   Plus, Edit2, Trash2, CheckCircle, Clock, Users, 
   Target, TrendingUp, Calendar, AlertCircle, X,
@@ -160,32 +161,165 @@ export default function App() {
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
-  const [goals, setGoals] = useState<Goal[]>(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
-  });
-  const [txs, setTxs] = useState<Transaction[]>(() => {
-    try { return JSON.parse(localStorage.getItem(TX_KEY) || '[]'); } catch { return []; }
-  });
-  const [achs, setAchs] = useState<Achievement[]>(() => {
-    try { return JSON.parse(localStorage.getItem(ACH_KEY) || '[]'); } catch { return []; }
-  });
-  const [checkIns, setCheckIns] = useState<CheckIn[]>(() => {
-    try { return JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]'); } catch { return []; }
-  });
-  const [rewards, setRewards] = useState<Reward[]>(() => {
-    try { 
-      const stored = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null'); 
-      return stored || DEFAULT_REWARDS;
-    } catch { 
-      return DEFAULT_REWARDS; 
-    }
-  });
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [txs, setTxs] = useState<Transaction[]>([]);
+  const [achs, setAchs] = useState<Achievement[]>([]);
+  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
+  const [rewards, setRewards] = useState<Reward[]>(DEFAULT_REWARDS);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(goals)); }, [goals]);
-  useEffect(() => { localStorage.setItem(TX_KEY, JSON.stringify(txs)); }, [txs]);
-  useEffect(() => { localStorage.setItem(ACH_KEY, JSON.stringify(achs)); }, [achs]);
-  useEffect(() => { localStorage.setItem(CHECKIN_KEY, JSON.stringify(checkIns)); }, [checkIns]);
-  useEffect(() => { localStorage.setItem(REWARDS_KEY, JSON.stringify(rewards)); }, [rewards]);
+  // Load initial data
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [
+          { data: goalsData },
+          { data: txsData },
+          { data: achsData },
+          { data: checkInsData },
+          { data: rewardsData }
+        ] = await Promise.all([
+          supabase.from('goals').select('*'),
+          supabase.from('transactions').select('*'),
+          supabase.from('achievements').select('*'),
+          supabase.from('checkins').select('*'),
+          supabase.from('rewards').select('*')
+        ]);
+
+        if (goalsData) {
+          setGoals(goalsData.map(g => ({
+            id: g.id,
+            name: g.name,
+            description: g.description,
+            startDate: g.start_date,
+            endDate: g.end_date,
+            progress: g.progress,
+            creator: g.creator,
+            assignees: g.assignees,
+            assignee: g.assignee,
+            signature: g.signature,
+            priority: g.priority,
+            completedAt: g.completed_at,
+            confirmations: g.confirmations
+          })));
+        }
+        if (txsData) setTxs(txsData);
+        if (achsData) {
+          setAchs(achsData.map(a => ({
+            id: a.id,
+            member: a.member,
+            achId: a.ach_id,
+            date: a.date
+          })));
+        }
+        if (checkInsData) setCheckIns(checkInsData);
+        if (rewardsData && rewardsData.length > 0) {
+          setRewards(rewardsData.map(r => ({
+            id: r.id,
+            name: r.name,
+            cost: r.cost,
+            description: r.description,
+            isActive: r.is_active,
+            isCustom: r.is_custom,
+            iconName: r.icon_name
+          })));
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Realtime subscriptions
+  useEffect(() => {
+    const goalsSub = supabase.channel('goals_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'goals' }, payload => {
+        if (payload.eventType === 'INSERT') {
+          const g = payload.new;
+          setGoals(prev => {
+            if (prev.some(p => p.id === g.id)) return prev;
+            return [...prev, {
+              id: g.id, name: g.name, description: g.description, startDate: g.start_date,
+              endDate: g.end_date, progress: g.progress, creator: g.creator,
+              assignees: g.assignees, assignee: g.assignee, signature: g.signature,
+              priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
+            }];
+          });
+        } else if (payload.eventType === 'UPDATE') {
+          const g = payload.new;
+          setGoals(prev => prev.map(p => p.id === g.id ? {
+            id: g.id, name: g.name, description: g.description, startDate: g.start_date,
+            endDate: g.end_date, progress: g.progress, creator: g.creator,
+            assignees: g.assignees, assignee: g.assignee, signature: g.signature,
+            priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
+          } : p));
+        } else if (payload.eventType === 'DELETE') {
+          setGoals(prev => prev.filter(p => p.id !== payload.old.id));
+        }
+      }).subscribe();
+
+    const txsSub = supabase.channel('txs_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, payload => {
+        setTxs(prev => {
+          if (prev.some(p => p.id === payload.new.id)) return prev;
+          return [...prev, payload.new as Transaction];
+        });
+      }).subscribe();
+
+    const achsSub = supabase.channel('achs_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'achievements' }, payload => {
+        setAchs(prev => {
+          if (prev.some(p => p.id === payload.new.id)) return prev;
+          return [...prev, {
+            id: payload.new.id, member: payload.new.member, achId: payload.new.ach_id, date: payload.new.date
+          }];
+        });
+      }).subscribe();
+
+    const checkInsSub = supabase.channel('checkins_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, payload => {
+        setCheckIns(prev => {
+          if (prev.some(p => p.member === payload.new.member && p.date === payload.new.date)) return prev;
+          return [...prev, payload.new as CheckIn];
+        });
+      }).subscribe();
+
+    const rewardsSub = supabase.channel('rewards_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rewards' }, payload => {
+        if (payload.eventType === 'INSERT') {
+          const r = payload.new;
+          setRewards(prev => {
+            if (prev.some(p => p.id === r.id)) return prev;
+            return [...prev, {
+              id: r.id, name: r.name, cost: r.cost, description: r.description,
+              isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
+            }];
+          });
+        } else if (payload.eventType === 'UPDATE') {
+          const r = payload.new;
+          setRewards(prev => prev.map(p => p.id === r.id ? {
+            id: r.id, name: r.name, cost: r.cost, description: r.description,
+            isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
+          } : p));
+        } else if (payload.eventType === 'DELETE') {
+          setRewards(prev => prev.filter(p => p.id !== payload.old.id));
+        }
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(goalsSub);
+      supabase.removeChannel(txsSub);
+      supabase.removeChannel(achsSub);
+      supabase.removeChannel(checkInsSub);
+      supabase.removeChannel(rewardsSub);
+    };
+  }, []);
+
   useEffect(() => { if (currentUser) localStorage.setItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
 
   const [filter, setFilter] = useState<FilterType>('全部');
@@ -275,104 +409,110 @@ export default function App() {
     }
   }, [goals, memberStats]); // Removed txs and achs from dependencies to prevent infinite loop
 
-  const handleCheckIn = (role: string) => {
+  const handleCheckIn = async (role: string) => {
     const today = new Date().toISOString().split('T')[0];
     if (!checkIns.some(c => c.member === role && c.date === today)) {
       const newCheckIn = { member: role, date: today };
-      const newTx: Transaction = { 
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), 
-        date: new Date().toISOString(), 
+      const newTx = { 
         member: role, 
         amount: 1, 
         reason: '每日签到', 
         type: 'earned' 
       };
       
-      setCheckIns(p => [...p, newCheckIn]);
-      setTxs(p => [...p, newTx]);
+      await Promise.all([
+        supabase.from('checkins').insert(newCheckIn),
+        supabase.from('transactions').insert(newTx)
+      ]);
     }
   };
 
-  const handleAddProgress = (id: string) => {
+  const handleAddProgress = async (id: string) => {
     const goal = goals.find(g => g.id === id);
     if (!goal) return;
     const newProg = Math.min(goal.progress + 10, 100);
-    const updated = { ...goal, progress: newProg };
-    setGoals(goals.map(g => g.id === id ? updated : g));
+    await supabase.from('goals').update({ progress: newProg }).eq('id', id);
   };
 
-  const handleConfirmCompletion = (id: string, member: string) => {
+  const handleConfirmCompletion = async (id: string, member: string) => {
     const goal = goals.find(g => g.id === id);
     if (!goal) return;
     
     const confirmations = { ...(goal.confirmations || {}), [member]: true };
     const allConfirmed = ROLES.every(r => confirmations[r]);
     
-    const updated = { ...goal, confirmations };
+    const updates: any = { confirmations };
     
     if (allConfirmed && !goal.completedAt) {
-      updated.completedAt = new Date().toISOString();
-      updated.progress = 100;
+      updates.completed_at = new Date().toISOString();
+      updates.progress = 100;
       
-      const now = new Date().toISOString();
-      const newTxs: Transaction[] = [];
       const isEarly = new Date() < new Date(goal.endDate);
       const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
       const isTeam = assignees.length > 1;
       
+      const newTxs: any[] = [];
       assignees.forEach(m => {
-        const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-        newTxs.push({ id: uuid, date: now, member: m, amount: 10, reason: `完成目标: ${goal.name}`, type: 'earned' });
+        newTxs.push({ member: m, amount: 10, reason: `完成目标: ${goal.name}`, type: 'earned' });
         if (isEarly) {
-          const earlyUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-          newTxs.push({ id: earlyUuid, date: now, member: m, amount: 3, reason: `提前完成`, type: 'earned' });
+          newTxs.push({ member: m, amount: 3, reason: `提前完成`, type: 'earned' });
         }
         if (isTeam) {
-          const teamUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-          newTxs.push({ id: teamUuid, date: now, member: m, amount: 5, reason: `团队协作`, type: 'earned' });
+          newTxs.push({ member: m, amount: 5, reason: `团队协作`, type: 'earned' });
         }
         
         const mCompleted = goals.filter(g => (g.assignees?.includes(m) || g.assignee === m) && g.completedAt);
         if (mCompleted.length % 3 === 2) {
-          const streakUuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-          newTxs.push({ id: streakUuid, date: now, member: m, amount: 8, reason: `连续完成3个目标`, type: 'earned' });
+          newTxs.push({ member: m, amount: 8, reason: `连续完成3个目标`, type: 'earned' });
         }
       });
-      setTxs(p => [...p, ...newTxs]);
+      
+      await supabase.from('transactions').insert(newTxs);
     }
     
-    setGoals(goals.map(g => g.id === id ? updated : g));
+    await supabase.from('goals').update(updates).eq('id', id);
   };
 
-  const handleRedeem = (member: string, reward: Reward) => {
+  const handleRedeem = async (member: string, reward: Reward) => {
     const stats = memberStats.find(m => m.role === member);
     if (stats && stats.pts >= reward.cost) {
-      const newTx: Transaction = { 
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), 
-        date: new Date().toISOString(), 
+      const newTx = { 
         member, 
         amount: reward.cost, 
         reason: `兑换奖励: ${reward.name}`, 
         type: 'redeemed' 
       };
-      setTxs(p => [...p, newTx]);
+      await supabase.from('transactions').insert(newTx);
     }
   };
 
-  const handleDelete = (id: string) => {
-    setGoals(goals.filter(g => g.id !== id));
+  const handleDelete = async (id: string) => {
+    await supabase.from('goals').delete().eq('id', id);
     setIsDeleteModalOpen(false);
     setGoalToDelete(null);
   };
 
-  const handleSaveGoal = (goalData: Omit<Goal, 'id'>) => {
-    const id = editingGoal ? editingGoal.id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
-    const newGoal = { ...goalData, id };
+  const handleSaveGoal = async (goalData: Omit<Goal, 'id'>) => {
+    const dbGoal = {
+      name: goalData.name,
+      description: goalData.description,
+      start_date: goalData.startDate,
+      end_date: goalData.endDate,
+      progress: goalData.progress,
+      creator: goalData.creator,
+      assignees: goalData.assignees,
+      assignee: goalData.assignee,
+      signature: goalData.signature,
+      priority: goalData.priority,
+      confirmations: goalData.confirmations || {}
+    };
+
     if (editingGoal) {
-      setGoals(goals.map(g => g.id === editingGoal.id ? newGoal : g));
+      await supabase.from('goals').update(dbGoal).eq('id', editingGoal.id);
     } else {
-      setGoals([...goals, newGoal]);
+      await supabase.from('goals').insert(dbGoal);
     }
+    
     setIsModalOpen(false);
     setEditingGoal(null);
   };
@@ -436,12 +576,36 @@ export default function App() {
     e.target.value = '';
   };
 
-  const handleToggleRewardActive = (id: string) => {
-    setRewards(rewards.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r));
+  const handleToggleRewardActive = async (id: string) => {
+    const r = rewards.find(r => r.id === id);
+    if (r) {
+      await supabase.from('rewards').update({ is_active: !r.isActive }).eq('id', id);
+    }
   };
 
-  const handleDeleteReward = (id: string) => {
-    setRewards(rewards.filter(r => r.id !== id));
+  const handleDeleteReward = async (id: string) => {
+    await supabase.from('rewards').delete().eq('id', id);
+  };
+
+  const handleSaveReward = async (rewardData: Omit<Reward, 'id'>) => {
+    const dbReward = {
+      name: rewardData.name,
+      cost: rewardData.cost,
+      description: rewardData.description,
+      is_active: rewardData.isActive,
+      is_custom: rewardData.isCustom,
+      icon_name: rewardData.iconName
+    };
+
+    if (editingReward) {
+      await supabase.from('rewards').update(dbReward).eq('id', editingReward.id);
+    } else {
+      const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+      await supabase.from('rewards').insert({ ...dbReward, id });
+    }
+    
+    setIsRewardEditModalOpen(false);
+    setEditingReward(null);
   };
 
   const leaderboard = useMemo(() => {
@@ -944,12 +1108,11 @@ export default function App() {
             reward={editingReward}
             onClose={() => setIsRewardEditModalOpen(false)}
             onSave={(r) => {
-              if (editingReward) {
-                setRewards(rewards.map(rw => rw.id === editingReward.id ? { ...rw, ...r } : rw));
-              } else {
-                setRewards([...rewards, { ...r, id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), isCustom: true, isActive: true }]);
-              }
-              setIsRewardEditModalOpen(false);
+              handleSaveReward({
+                ...r,
+                isActive: editingReward ? editingReward.isActive : true,
+                isCustom: editingReward ? editingReward.isCustom : true
+              });
             }}
           />
         )}
