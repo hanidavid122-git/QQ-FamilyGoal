@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import { 
   Plus, Edit2, Trash2, CheckCircle, Clock, Users, 
   Target, TrendingUp, Calendar, AlertCircle, X,
@@ -154,6 +154,41 @@ function LineChart({ data }: { data: number[] }) {
 }
 
 export default function App() {
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans text-stone-800">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center"
+        >
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Database className="w-8 h-8 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-bold mb-4">缺少数据库配置</h1>
+          <p className="text-stone-600 mb-6 text-sm">
+            为了实现多人实时同步，请在 AI Studio 右侧的 <strong>Secrets</strong> 面板中添加以下环境变量：
+          </p>
+          <div className="bg-stone-50 p-4 rounded-xl text-left font-mono text-sm text-stone-700 mb-6 space-y-3">
+            <div>
+              <span className="font-bold text-stone-900">VITE_SUPABASE_URL</span>
+              <br />
+              <span className="text-stone-500 text-xs">你的 Supabase Project URL</span>
+            </div>
+            <div>
+              <span className="font-bold text-stone-900">VITE_SUPABASE_ANON_KEY</span>
+              <br />
+              <span className="text-stone-500 text-xs">你的 Supabase anon key</span>
+            </div>
+          </div>
+          <p className="text-sm text-stone-500">
+            配置完成后，请刷新页面。
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
   const [currentUser, setCurrentUser] = useState<string | null>(() => {
     return localStorage.getItem(CURRENT_USER_KEY);
   });
@@ -170,6 +205,61 @@ export default function App() {
 
   // Load initial data
   useEffect(() => {
+    const migrateData = async () => {
+      const isMigrated = localStorage.getItem('family_goals_migrated');
+      if (isMigrated === 'true') return;
+
+      try {
+        const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        const localTxs = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
+        const localAchs = JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
+        const localCheckIns = JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
+        const localRewards = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null');
+
+        if (localGoals.length > 0) {
+          const mappedGoals = localGoals.map((g: any) => ({
+            id: g.id, name: g.name, description: g.description, start_date: g.startDate,
+            end_date: g.endDate, progress: g.progress, creator: g.creator || '爸爸',
+            assignees: g.assignees || (g.assignee ? [g.assignee] : ['爸爸']),
+            assignee: g.assignee, signature: g.signature || '', priority: g.priority || '中',
+            completed_at: g.completedAt, confirmations: g.confirmations || {}
+          }));
+          await supabase.from('goals').upsert(mappedGoals);
+        }
+
+        if (localTxs.length > 0) {
+          await supabase.from('transactions').upsert(localTxs);
+        }
+
+        if (localAchs.length > 0) {
+          const mappedAchs = localAchs.map((a: any) => ({
+            id: a.id, member: a.member, ach_id: a.achId, date: a.date
+          }));
+          await supabase.from('achievements').upsert(mappedAchs);
+        }
+
+        if (localCheckIns.length > 0) {
+          const mappedCheckIns = localCheckIns.map((c: any) => ({
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+            member: c.member, date: c.date
+          }));
+          await supabase.from('checkins').upsert(mappedCheckIns);
+        }
+
+        if (localRewards && localRewards.length > 0) {
+          const mappedRewards = localRewards.map((r: any) => ({
+            id: r.id, name: r.name, cost: r.cost, description: r.description,
+            is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName
+          }));
+          await supabase.from('rewards').upsert(mappedRewards);
+        }
+
+        localStorage.setItem('family_goals_migrated', 'true');
+      } catch (e) {
+        console.error('Migration failed', e);
+      }
+    };
+
     const loadData = async () => {
       setLoading(true);
       try {
@@ -232,7 +322,12 @@ export default function App() {
       }
     };
 
-    loadData();
+    const init = async () => {
+      await migrateData();
+      await loadData();
+    };
+
+    init();
   }, []);
 
   // Realtime subscriptions

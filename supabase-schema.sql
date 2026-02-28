@@ -1,12 +1,19 @@
--- Enable realtime for all tables
+-- 1. 先清理掉之前建的旧表
+drop table if exists public.goals cascade;
+drop table if exists public.transactions cascade;
+drop table if exists public.achievements cascade;
+drop table if exists public.checkins cascade;
+drop table if exists public.rewards cascade;
+
+-- 2. 开启实时同步功能
 begin;
   drop publication if exists supabase_realtime;
   create publication supabase_realtime;
 commit;
 
--- 1. Goals Table
+-- 3. 重新创建支持历史数据（text ID）的表
 create table public.goals (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   name text not null,
   description text not null,
   start_date date not null,
@@ -23,9 +30,8 @@ create table public.goals (
   updated_at timestamptz not null default now()
 );
 
--- 2. Transactions Table
 create table public.transactions (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   date timestamptz not null default now(),
   member text not null,
   amount integer not null,
@@ -34,24 +40,21 @@ create table public.transactions (
   created_at timestamptz not null default now()
 );
 
--- 3. Achievements Table
 create table public.achievements (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   member text not null,
   ach_id text not null,
   date timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 
--- 4. CheckIns Table
 create table public.checkins (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   member text not null,
   date date not null,
   created_at timestamptz not null default now()
 );
 
--- 5. Rewards Table
 create table public.rewards (
   id text primary key,
   name text not null,
@@ -64,7 +67,7 @@ create table public.rewards (
   updated_at timestamptz not null default now()
 );
 
--- Insert default rewards
+-- 4. 插入默认奖励
 insert into public.rewards (id, name, cost, is_active, is_custom, icon_name) values
   ('r1', '选择家庭电影', 100, true, false, 'Film'),
   ('r2', '免做家务一天', 200, true, false, 'Target'),
@@ -73,21 +76,20 @@ insert into public.rewards (id, name, cost, is_active, is_custom, icon_name) val
   ('r5', '额外游戏时间', 50, true, false, 'Gamepad')
 on conflict (id) do nothing;
 
--- Enable Row Level Security (RLS) but allow anonymous access for this family app
+-- 5. 配置权限（允许你的纯前端应用直接读写）
 alter table public.goals enable row level security;
 alter table public.transactions enable row level security;
 alter table public.achievements enable row level security;
 alter table public.checkins enable row level security;
 alter table public.rewards enable row level security;
 
--- Create policies to allow all operations for anonymous users (since this is a private family app)
 create policy "Allow anonymous access to goals" on public.goals for all using (true) with check (true);
 create policy "Allow anonymous access to transactions" on public.transactions for all using (true) with check (true);
 create policy "Allow anonymous access to achievements" on public.achievements for all using (true) with check (true);
 create policy "Allow anonymous access to checkins" on public.checkins for all using (true) with check (true);
 create policy "Allow anonymous access to rewards" on public.rewards for all using (true) with check (true);
 
--- Add tables to realtime publication
+-- 6. 添加表到实时同步
 alter publication supabase_realtime add table public.goals;
 alter publication supabase_realtime add table public.transactions;
 alter publication supabase_realtime add table public.achievements;
