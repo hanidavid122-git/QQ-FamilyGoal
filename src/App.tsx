@@ -156,6 +156,10 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<string | null>(() => {
     return localStorage.getItem(CURRENT_USER_KEY);
   });
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
   const [goals, setGoals] = useState<Goal[]>(() => {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
   });
@@ -461,7 +465,80 @@ export default function App() {
 
   const isAdmin = currentUser === '管理员';
 
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminUsername === 'admin' && adminPassword === 'password') {
+      setCurrentUser('管理员');
+      setShowAdminLogin(false);
+      setAdminUsername('');
+      setAdminPassword('');
+      setAdminError('');
+    } else {
+      setAdminError('用户名或密码错误');
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem(CURRENT_USER_KEY);
+  };
+
   if (!currentUser) {
+    if (showAdminLogin) {
+      return (
+        <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans text-stone-800">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full"
+          >
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Settings className="w-8 h-8 text-blue-500" />
+            </div>
+            <h1 className="text-2xl font-bold mb-6 text-center">管理员登录</h1>
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">用户名</label>
+                <input 
+                  type="text" 
+                  value={adminUsername} 
+                  onChange={e => setAdminUsername(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  placeholder="请输入 admin"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">密码</label>
+                <input 
+                  type="password" 
+                  value={adminPassword} 
+                  onChange={e => setAdminPassword(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  placeholder="请输入 password"
+                />
+              </div>
+              {adminError && <p className="text-red-500 text-sm text-center">{adminError}</p>}
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowAdminLogin(false); setAdminError(''); }}
+                  className="flex-1 py-3 px-4 rounded-xl border border-stone-200 hover:bg-stone-50 transition-all font-medium text-stone-600 cursor-pointer"
+                >
+                  返回
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-all font-medium cursor-pointer"
+                >
+                  登录
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans text-stone-800">
         <motion.div 
@@ -487,7 +564,7 @@ export default function App() {
             ))}
           </div>
           <button
-            onClick={() => setCurrentUser('管理员')}
+            onClick={() => setShowAdminLogin(true)}
             className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
           >
             <Settings className="w-5 h-5" />
@@ -513,6 +590,12 @@ export default function App() {
             <span className="text-sm font-medium text-stone-600 bg-stone-100 px-3 py-1 rounded-full hidden sm:inline-block">
               当前角色: {currentUser}
             </span>
+            <button 
+              onClick={handleLogout}
+              className="text-xs font-medium text-stone-500 hover:text-red-500 underline cursor-pointer"
+            >
+              退出
+            </button>
             {isAdmin && (
               <button 
                 onClick={() => setIsDataModalOpen(true)}
@@ -538,15 +621,13 @@ export default function App() {
                 );
               })}
             </div>
-            {isAdmin && (
-              <button 
-                onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
-                className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-sm transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">新建目标</span>
-              </button>
-            )}
+            <button 
+              onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-sm transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">新建目标</span>
+            </button>
           </div>
         </div>
       </header>
@@ -614,6 +695,8 @@ export default function App() {
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-stone-900 truncate">{goal.name}</p>
                           <p className="text-xs text-stone-500 flex gap-2">
+                            <span>发起人: {goal.creator || '管理员'}</span>
+                            <span className="hidden sm:inline">•</span>
                             <span>责任人: {(goal.assignees || [goal.assignee]).join(', ')}</span>
                             <span className="hidden sm:inline">•</span>
                             <span className="hidden sm:inline">优先级: {goal.priority}</span>
@@ -821,6 +904,7 @@ export default function App() {
         {isModalOpen && (
           <GoalModal 
             goal={editingGoal} 
+            currentUser={currentUser}
             onClose={() => setIsModalOpen(false)} 
             onSave={handleSaveGoal} 
           />
@@ -1035,8 +1119,8 @@ function GoalCard({ goal, currentUser, onAddProgress, onConfirm, onEdit, onDelet
   const confirmedCount = ROLES.filter(r => confirmations[r]).length;
 
   const isAdmin = currentUser === '管理员';
-  const canEdit = isAdmin;
-  const canAddProgress = isAdmin || assignees.includes(currentUser);
+  const canEdit = isAdmin || goal.creator === currentUser;
+  const canAddProgress = isAdmin || assignees.includes(currentUser) || goal.creator === currentUser;
 
   return (
     <motion.div 
@@ -1084,7 +1168,7 @@ function GoalCard({ goal, currentUser, onAddProgress, onConfirm, onEdit, onDelet
         <div className="space-y-3 mb-6">
           <div className="flex items-center gap-2 text-sm text-stone-600">
             <Users className="w-4 h-4 text-stone-400 shrink-0" />
-            <span>责任人: {assignees.join(', ')}</span>
+            <span>发起人: {goal.creator || '管理员'} | 责任人: {assignees.join(', ')}</span>
           </div>
           {isPendingConfirmation && (
             <div className="flex flex-col gap-2 text-sm text-stone-600">
@@ -1173,7 +1257,7 @@ function GoalCard({ goal, currentUser, onAddProgress, onConfirm, onEdit, onDelet
   );
 }
 
-function GoalModal({ goal, onClose, onSave }: { goal: Goal | null, onClose: () => void, onSave: (g: Omit<Goal, 'id'>) => void }) {
+function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, currentUser: string, onClose: () => void, onSave: (g: Omit<Goal, 'id'>) => void }) {
   const [name, setName] = useState(goal?.name || '');
   const [description, setDescription] = useState(goal?.description || '');
   
@@ -1185,8 +1269,8 @@ function GoalModal({ goal, onClose, onSave }: { goal: Goal | null, onClose: () =
   const [startDate, setStartDate] = useState(goal?.startDate || todayStr);
   const [endDate, setEndDate] = useState(goal?.endDate || nextMonthStr);
   const [progress, setProgress] = useState(goal?.progress || 0);
-  const [creator, setCreator] = useState(goal?.creator || '爸爸');
-  const [assignees, setAssignees] = useState<string[]>(goal?.assignees || (goal?.assignee ? [goal.assignee] : ['爸爸']));
+  const [creator, setCreator] = useState(goal?.creator || currentUser);
+  const [assignees, setAssignees] = useState<string[]>(goal?.assignees || (goal?.assignee ? [goal.assignee] : [currentUser === '管理员' ? '爸爸' : currentUser]));
   const [signature, setSignature] = useState(goal?.signature || '');
   const [priority, setPriority] = useState<Priority>(goal?.priority || '中');
 
