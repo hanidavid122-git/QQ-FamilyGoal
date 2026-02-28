@@ -91,6 +91,15 @@ const ACHIEVEMENTS = [
   { id: 'a5', name: '高优大师', desc: '完成3个高优目标', bonus: 10, icon: Crown, color: 'text-purple-500' }
 ];
 
+function generateId() {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+}
+
+function getLocalDateString(date: Date) {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().split('T')[0];
+}
+
 // Helper to calculate warning status
 function getWarningStatus(goal: Goal): 'red' | 'yellow' | 'green' {
   if (goal.progress >= 100) return 'green';
@@ -431,6 +440,13 @@ export default function App() {
   const [isRewardEditModalOpen, setIsRewardEditModalOpen] = useState(false);
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
 
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const memberStats = useMemo(() => {
     return ROLES.map(role => {
       const mGoals = goals.filter(g => {
@@ -505,111 +521,152 @@ export default function App() {
   }, [goals, memberStats]); // Removed txs and achs from dependencies to prevent infinite loop
 
   const handleCheckIn = async (role: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    if (!checkIns.some(c => c.member === role && c.date === today)) {
-      const newCheckIn = { member: role, date: today };
-      const newTx = { 
-        member: role, 
-        amount: 1, 
-        reason: '每日签到', 
-        type: 'earned' 
-      };
-      
-      await Promise.all([
-        supabase.from('checkins').insert(newCheckIn),
-        supabase.from('transactions').insert(newTx)
-      ]);
+    try {
+      const today = getLocalDateString(new Date());
+      if (!checkIns.some(c => c.member === role && c.date === today)) {
+        const newCheckIn = { id: generateId(), member: role, date: today };
+        const newTx = { 
+          id: generateId(),
+          member: role, 
+          amount: 1, 
+          reason: '每日签到', 
+          type: 'earned' 
+        };
+        
+        await Promise.all([
+          supabase.from('checkins').insert(newCheckIn),
+          supabase.from('transactions').insert(newTx)
+        ]);
+        showToast('签到成功！积分 +1');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('签到失败，请重试', 'error');
     }
   };
 
   const handleAddProgress = async (id: string) => {
-    const goal = goals.find(g => g.id === id);
-    if (!goal) return;
-    const newProg = Math.min(goal.progress + 10, 100);
-    await supabase.from('goals').update({ progress: newProg }).eq('id', id);
+    try {
+      const goal = goals.find(g => g.id === id);
+      if (!goal) return;
+      const newProg = Math.min(goal.progress + 10, 100);
+      await supabase.from('goals').update({ progress: newProg }).eq('id', id);
+      showToast('进度已更新');
+    } catch (e) {
+      console.error(e);
+      showToast('更新失败，请重试', 'error');
+    }
   };
 
   const handleConfirmCompletion = async (id: string, member: string) => {
-    const goal = goals.find(g => g.id === id);
-    if (!goal) return;
-    
-    const confirmations = { ...(goal.confirmations || {}), [member]: true };
-    const allConfirmed = ROLES.every(r => confirmations[r]);
-    
-    const updates: any = { confirmations };
-    
-    if (allConfirmed && !goal.completedAt) {
-      updates.completed_at = new Date().toISOString();
-      updates.progress = 100;
+    try {
+      const goal = goals.find(g => g.id === id);
+      if (!goal) return;
       
-      const isEarly = new Date() < new Date(goal.endDate);
-      const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
-      const isTeam = assignees.length > 1;
+      const confirmations = { ...(goal.confirmations || {}), [member]: true };
+      const allConfirmed = ROLES.every(r => confirmations[r]);
       
-      const newTxs: any[] = [];
-      assignees.forEach(m => {
-        newTxs.push({ member: m, amount: 10, reason: `完成目标: ${goal.name}`, type: 'earned' });
-        if (isEarly) {
-          newTxs.push({ member: m, amount: 3, reason: `提前完成`, type: 'earned' });
-        }
-        if (isTeam) {
-          newTxs.push({ member: m, amount: 5, reason: `团队协作`, type: 'earned' });
-        }
+      const updates: any = { confirmations };
+      
+      if (allConfirmed && !goal.completedAt) {
+        updates.completed_at = new Date().toISOString();
+        updates.progress = 100;
         
-        const mCompleted = goals.filter(g => (g.assignees?.includes(m) || g.assignee === m) && g.completedAt);
-        if (mCompleted.length % 3 === 2) {
-          newTxs.push({ member: m, amount: 8, reason: `连续完成3个目标`, type: 'earned' });
-        }
-      });
+        const isEarly = new Date() < new Date(goal.endDate);
+        const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
+        const isTeam = assignees.length > 1;
+        
+        const newTxs: any[] = [];
+        assignees.forEach(m => {
+          newTxs.push({ id: generateId(), member: m, amount: 10, reason: `完成目标: ${goal.name}`, type: 'earned' });
+          if (isEarly) {
+            newTxs.push({ id: generateId(), member: m, amount: 3, reason: `提前完成`, type: 'earned' });
+          }
+          if (isTeam) {
+            newTxs.push({ id: generateId(), member: m, amount: 5, reason: `团队协作`, type: 'earned' });
+          }
+          
+          const mCompleted = goals.filter(g => (g.assignees?.includes(m) || g.assignee === m) && g.completedAt);
+          if (mCompleted.length % 3 === 2) {
+            newTxs.push({ id: generateId(), member: m, amount: 8, reason: `连续完成3个目标`, type: 'earned' });
+          }
+        });
+        
+        await supabase.from('transactions').insert(newTxs);
+      }
       
-      await supabase.from('transactions').insert(newTxs);
+      await supabase.from('goals').update(updates).eq('id', id);
+      showToast('确认成功');
+    } catch (e) {
+      console.error(e);
+      showToast('确认失败，请重试', 'error');
     }
-    
-    await supabase.from('goals').update(updates).eq('id', id);
   };
 
   const handleRedeem = async (member: string, reward: Reward) => {
-    const stats = memberStats.find(m => m.role === member);
-    if (stats && stats.pts >= reward.cost) {
-      const newTx = { 
-        member, 
-        amount: reward.cost, 
-        reason: `兑换奖励: ${reward.name}`, 
-        type: 'redeemed' 
-      };
-      await supabase.from('transactions').insert(newTx);
+    try {
+      const stats = memberStats.find(m => m.role === member);
+      if (stats && stats.pts >= reward.cost) {
+        const newTx = { 
+          id: generateId(),
+          member, 
+          amount: reward.cost, 
+          reason: `兑换奖励: ${reward.name}`, 
+          type: 'redeemed' 
+        };
+        await supabase.from('transactions').insert(newTx);
+        showToast(`成功兑换：${reward.name}`);
+      } else {
+        showToast('积分不足', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('兑换失败，请重试', 'error');
     }
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('goals').delete().eq('id', id);
-    setIsDeleteModalOpen(false);
-    setGoalToDelete(null);
+    try {
+      await supabase.from('goals').delete().eq('id', id);
+      setIsDeleteModalOpen(false);
+      setGoalToDelete(null);
+      showToast('目标已删除');
+    } catch (e) {
+      console.error(e);
+      showToast('删除失败，请重试', 'error');
+    }
   };
 
   const handleSaveGoal = async (goalData: Omit<Goal, 'id'>) => {
-    const dbGoal = {
-      name: goalData.name,
-      description: goalData.description,
-      start_date: goalData.startDate,
-      end_date: goalData.endDate,
-      progress: goalData.progress,
-      creator: goalData.creator,
-      assignees: goalData.assignees,
-      assignee: goalData.assignee,
-      signature: goalData.signature,
-      priority: goalData.priority,
-      confirmations: goalData.confirmations || {}
-    };
+    try {
+      const dbGoal = {
+        name: goalData.name,
+        description: goalData.description,
+        start_date: goalData.startDate,
+        end_date: goalData.endDate,
+        progress: goalData.progress,
+        creator: goalData.creator,
+        assignees: goalData.assignees,
+        assignee: goalData.assignee,
+        signature: goalData.signature,
+        priority: goalData.priority,
+        confirmations: goalData.confirmations || {}
+      };
 
-    if (editingGoal) {
-      await supabase.from('goals').update(dbGoal).eq('id', editingGoal.id);
-    } else {
-      await supabase.from('goals').insert(dbGoal);
+      if (editingGoal) {
+        await supabase.from('goals').update(dbGoal).eq('id', editingGoal.id);
+        showToast('目标已更新');
+      } else {
+        await supabase.from('goals').insert({ ...dbGoal, id: generateId() });
+        showToast('新目标创建成功');
+      }
+      
+      setIsModalOpen(false);
+      setEditingGoal(null);
+    } catch (e) {
+      console.error(e);
+      showToast('保存失败，请重试', 'error');
     }
-    
-    setIsModalOpen(false);
-    setEditingGoal(null);
   };
 
   const handleExport = () => {
@@ -1160,6 +1217,22 @@ export default function App() {
 
       {/* Modals */}
       <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium ${
+              toast.type === 'error' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'
+            }`}
+          >
+            {toast.type === 'error' ? <AlertCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            {toast.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isModalOpen && (
           <GoalModal 
             goal={editingGoal} 
@@ -1519,10 +1592,10 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
   const [name, setName] = useState(goal?.name || '');
   const [description, setDescription] = useState(goal?.description || '');
   
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
-  const nextMonthStr = nextMonth.toISOString().split('T')[0];
+  const nextMonthStr = getLocalDateString(nextMonth);
 
   const [startDate, setStartDate] = useState(goal?.startDate || todayStr);
   const [endDate, setEndDate] = useState(goal?.endDate || nextMonthStr);
