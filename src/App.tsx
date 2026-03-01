@@ -344,6 +344,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginRole, setLoginRole] = useState<string | null>(null);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profilesTableMissing, setProfilesTableMissing] = useState(false);
 
   // Load initial data
@@ -411,7 +412,7 @@ export default function App() {
             const missingRoles = ROLES.filter(r => !existingRoles.includes(r));
             
             if (missingRoles.length > 0) {
-                await supabase.from('profiles').insert(missingRoles.map(r => ({ role: r, pin: '1234' })));
+                await supabase.from('profiles').insert(missingRoles.map(r => ({ role: r, pin: '1183' })));
             }
         }
 
@@ -1084,6 +1085,20 @@ export default function App() {
     }
   };
 
+  const handleUpdateProfilePin = async (role: string, newPin: string) => {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ pin: newPin })
+      .eq('role', role);
+    
+    if (error) {
+      console.error('Error updating PIN:', error);
+      showToast('更新PIN码失败', 'error');
+    } else {
+      showToast(`${role} 的PIN码已更新`);
+    }
+  };
+
   const leaderboard = useMemo(() => {
     const now = new Date().getTime();
     return ROLES.map(role => {
@@ -1121,35 +1136,43 @@ export default function App() {
   };
 
   const handleLogin = async (role: string, pin: string) => {
+    console.log('Attempting login for role:', role, 'with pin:', pin);
     // For admin, use hardcoded password for now
     if (role === '管理员') {
       if (pin === 'admin123') { // Simple admin password
+        console.log('Admin login successful');
         setCurrentUser('管理员');
         return true;
       }
+      console.log('Admin login failed');
       return false;
     }
 
     // For family members, check profile pin
     const profile = profiles.find(p => p.role === role);
-    if (profile && profile.pin === pin) {
-      setCurrentUser(role);
-      // Load user layout
-      if (profile.layout_config) {
-        setLayout(profile.layout_config);
-      } else {
-        setLayout(DEFAULT_LAYOUT);
+    if (profile) {
+      console.log('Found profile for role:', role, 'PIN matches:', profile.pin === pin);
+      if (profile.pin === pin) {
+        setCurrentUser(role);
+        // Load user layout
+        if (profile.layout_config) {
+          setLayout(profile.layout_config);
+        } else {
+          setLayout(DEFAULT_LAYOUT);
+        }
+        return true;
       }
-      return true;
     }
     
-    // Fallback: if no profiles loaded (e.g. table missing), allow default PIN '1234'
-    if (profiles.length === 0 && pin === '1234') {
+    // Fallback: if no profiles loaded (e.g. table missing), allow default PIN '1183'
+    if (profiles.length === 0 && pin === '1183') {
+      console.log('No profiles loaded, allowing default PIN 1183');
       setCurrentUser(role);
       setLayout(DEFAULT_LAYOUT);
       return true;
     }
 
+    console.log('Login failed: No profile found or PIN mismatch');
     return false;
   };
 
@@ -1173,61 +1196,6 @@ export default function App() {
   };
 
   if (!currentUser) {
-    if (showAdminLogin) {
-      return (
-        <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans text-stone-800">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full"
-          >
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Settings className="w-8 h-8 text-blue-500" />
-            </div>
-            <h1 className="text-2xl font-bold mb-6 text-center">管理员登录</h1>
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">用户名</label>
-                <input 
-                  type="text" 
-                  value={adminUsername} 
-                  onChange={e => setAdminUsername(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                  placeholder="请输入 admin"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">密码</label>
-                <input 
-                  type="password" 
-                  value={adminPassword} 
-                  onChange={e => setAdminPassword(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                  placeholder="请输入 password"
-                />
-              </div>
-              {adminError && <p className="text-red-500 text-sm text-center">{adminError}</p>}
-              <div className="pt-2 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setShowAdminLogin(false); setAdminError(''); }}
-                  className="flex-1 py-3 px-4 rounded-xl border border-stone-200 hover:bg-stone-50 transition-all font-medium text-stone-600 cursor-pointer"
-                >
-                  返回
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-all font-medium cursor-pointer"
-                >
-                  登录
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      );
-    }
-
     return (
       <div className="min-h-screen bg-orange-50 flex items-center justify-center p-4 font-sans text-stone-800">
         <motion.div 
@@ -1255,7 +1223,11 @@ export default function App() {
             {ROLES.map(role => (
               <button
                 key={role}
-                onClick={() => { setLoginRole(role); setIsLoginModalOpen(true); }}
+                onClick={() => { 
+                  console.log('Role clicked:', role);
+                  setLoginRole(role); 
+                  setIsLoginModalOpen(true); 
+                }}
                 className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
               >
                 {role}
@@ -1270,6 +1242,17 @@ export default function App() {
             管理员 (可管理所有项目)
           </button>
         </motion.div>
+
+        <AnimatePresence>
+          {isLoginModalOpen && (
+            <LoginModal
+              isOpen={isLoginModalOpen}
+              initialRole={loginRole}
+              onLogin={handleLogin}
+              onClose={() => setIsLoginModalOpen(false)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -1296,13 +1279,22 @@ export default function App() {
               退出
             </button>
             {isAdmin && (
-              <button 
-                onClick={() => setIsDataModalOpen(true)}
-                className="p-2 text-stone-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors cursor-pointer"
-                title="数据管理"
-              >
-                <Database className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="p-2 text-stone-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors cursor-pointer"
+                  title="成员管理"
+                >
+                  <Users className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => setIsDataModalOpen(true)}
+                  className="p-2 text-stone-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors cursor-pointer"
+                  title="数据管理"
+                >
+                  <Database className="w-5 h-5" />
+                </button>
+              </div>
             )}
             <button 
               onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
@@ -1532,6 +1524,20 @@ export default function App() {
             onClose={() => setHistoryModal(null)}
           />
         )}
+        {isProfileModalOpen && (
+          <ProfileManagementModal
+            profiles={profiles}
+            onClose={() => setIsProfileModalOpen(false)}
+            onUpdatePin={handleUpdateProfilePin}
+          />
+        )}
+        {isProfileModalOpen && (
+          <ProfileManagementModal
+            profiles={profiles}
+            onClose={() => setIsProfileModalOpen(false)}
+            onUpdatePin={handleUpdateProfilePin}
+          />
+        )}
         {isDataModalOpen && (
           <DataManagementModal
             onClose={() => setIsDataModalOpen(false)}
@@ -1653,6 +1659,54 @@ function MessageBoardModal({ messages, currentUser, onClose, onSend, onLike }: {
               <Upload className="w-5 h-5 rotate-90" />
             </button>
           </form>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function ProfileManagementModal({ profiles, onClose, onUpdatePin }: { profiles: Profile[], onClose: () => void, onUpdatePin: (role: string, pin: string) => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Users className="w-6 h-6" /> 成员管理
+          </h2>
+          <button onClick={onClose} className="text-white/80 hover:text-white cursor-pointer">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-stone-500 mb-4">管理员可以为每位家庭成员配置登录 PIN 码。</p>
+          {profiles.map(profile => (
+            <div key={profile.role} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-sm">
+                  {profile.role === '爸爸' ? '👨🏻' : profile.role === '妈妈' ? '👩🏻' : profile.role === '姐姐' ? '👧🏻' : '👶🏻'}
+                </div>
+                <span className="font-bold text-stone-800">{profile.role}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="text" 
+                  defaultValue={profile.pin}
+                  maxLength={4}
+                  onBlur={(e) => {
+                    if (e.target.value.length === 4 && e.target.value !== profile.pin) {
+                      onUpdatePin(profile.role, e.target.value);
+                    }
+                  }}
+                  className="w-20 text-center font-mono font-bold py-2 rounded-lg border border-stone-200 focus:border-indigo-500 outline-none"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="p-6 bg-stone-50 border-t border-stone-100 flex justify-end">
+          <button onClick={onClose} className="px-6 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl font-bold transition-colors">
+            完成
+          </button>
         </div>
       </motion.div>
     </div>

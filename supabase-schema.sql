@@ -80,7 +80,7 @@ create table public.messages (
 
 create table public.profiles (
   role text primary key,
-  pin text not null default '1234',
+  pin text not null default '1183',
   layout_config jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -96,10 +96,10 @@ insert into public.rewards (id, name, cost, is_active, is_custom, icon_name) val
 on conflict (id) do nothing;
 
 insert into public.profiles (role, pin) values
-  ('爸爸', '1234'),
-  ('妈妈', '1234'),
-  ('姐姐', '1234'),
-  ('妹妹', '1234')
+  ('爸爸', '1183'),
+  ('妈妈', '1183'),
+  ('姐姐', '1183'),
+  ('妹妹', '1183')
 on conflict (role) do nothing;
 
 -- 5. 配置权限（允许你的纯前端应用直接读写）

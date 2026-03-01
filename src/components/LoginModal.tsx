@@ -11,6 +11,7 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModalProps) {
+  console.log('LoginModal rendered - isOpen:', isOpen, 'initialRole:', initialRole);
   const [selectedRole, setSelectedRole] = useState<string | null>(initialRole || null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -18,6 +19,7 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
 
   // Reset state when modal opens or initialRole changes
   React.useEffect(() => {
+    console.log('LoginModal useEffect - isOpen:', isOpen, 'initialRole:', initialRole);
     if (isOpen) {
       setSelectedRole(initialRole || null);
       setPin('');
