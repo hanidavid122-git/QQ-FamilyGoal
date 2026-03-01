@@ -557,41 +557,37 @@ export default function App() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [
-          goalsRes,
-          txsRes,
-          achsRes,
-          rewardsRes,
-          msgsRes,
-          profilesRes
-        ] = await Promise.all([
-          supabase.from('goals').select('*'),
-          supabase.from('transactions').select('*'),
-          supabase.from('achievements').select('*'),
-          supabase.from('rewards').select('*'),
-          supabase.from('messages').select('*').order('date', { ascending: true }),
-          supabase.from('profiles').select('*')
+        // Load data independently to prevent one failure from blocking others
+        const goalsPromise = supabase.from('goals').select('*');
+        const txsPromise = supabase.from('transactions').select('*');
+        const achsPromise = supabase.from('achievements').select('*');
+        const rewardsPromise = supabase.from('rewards').select('*');
+        const msgsPromise = supabase.from('messages').select('*').order('date', { ascending: true });
+        const profilesPromise = supabase.from('profiles').select('*');
+
+        const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes] = await Promise.all([
+            goalsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            txsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            achsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            rewardsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            msgsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            profilesPromise.then(res => res, (e: any) => ({ data: null, error: e }))
         ]);
 
-        const goalsData = goalsRes.data;
-        const txsData = txsRes.data;
-        const achsData = achsRes.data;
-        const rewardsData = rewardsRes.data;
-        const msgsData = msgsRes.data;
-        const profilesData = profilesRes.data;
-
-        if (profilesRes.error && profilesRes.error.code === '42P01') {
-          console.warn('Profiles table does not exist. Please run the SQL schema in Supabase dashboard.');
+        if (profilesRes.error && (profilesRes.error as any).code === '42P01') {
+          console.warn('Profiles table does not exist.');
           setProfilesTableMissing(true);
         }
 
-        if (goalsData) {
-          const goalsToUpdate = goalsData.filter(g => g.progress === 100 && !g.completed_at);
+        if (goalsRes.data) {
+          const goalsData = goalsRes.data;
+          const goalsToUpdate = goalsData.filter((g: any) => g.progress === 100 && !g.completed_at);
           if (goalsToUpdate.length > 0) {
-            await Promise.all(goalsToUpdate.map(g => supabase.from('goals').update({ progress: 99 }).eq('id', g.id)));
-            goalsToUpdate.forEach(g => g.progress = 99);
+            // Fire and forget update
+            Promise.all(goalsToUpdate.map((g: any) => supabase.from('goals').update({ progress: 99 }).eq('id', g.id))).catch(console.error);
+            goalsToUpdate.forEach((g: any) => g.progress = 99);
           }
-          setGoals(goalsData.map(g => ({
+          setGoals(goalsData.map((g: any) => ({
             id: g.id,
             name: g.name,
             description: g.description,
@@ -607,17 +603,20 @@ export default function App() {
             confirmations: g.confirmations
           })));
         }
-        if (txsData) setTxs(txsData);
-        if (achsData) {
-          setAchs(achsData.map(a => ({
+
+        if (txsRes.data) setTxs(txsRes.data as any[]);
+        
+        if (achsRes.data) {
+          setAchs((achsRes.data as any[]).map(a => ({
             id: a.id,
             member: a.member,
             achId: a.ach_id,
             date: a.date
           })));
         }
-        if (rewardsData && rewardsData.length > 0) {
-          setRewards(rewardsData.map(r => ({
+
+        if (rewardsRes.data && rewardsRes.data.length > 0) {
+          setRewards((rewardsRes.data as any[]).map(r => ({
             id: r.id,
             name: r.name,
             cost: r.cost,
@@ -627,8 +626,9 @@ export default function App() {
             iconName: r.icon_name
           })));
         }
-        if (msgsData) {
-          setMessages(msgsData.map(m => {
+
+        if (msgsRes.data) {
+          setMessages((msgsRes.data as any[]).map(m => {
             let extra: any = {};
             try {
               if (m.avatar && m.avatar.startsWith('{')) {
@@ -644,21 +644,21 @@ export default function App() {
               avatar: m.avatar,
               color: m.color,
               font_size: m.font_size,
-              speed: extra.s,
-              effect: extra.e,
-              duration: extra.d
+              speed: extra.s || extra.speed,
+              effect: extra.e || extra.effect,
+              duration: extra.d || extra.duration
             };
           }));
         }
-        if (profilesData && profilesData.length > 0) {
-            setProfiles(profilesData.map(p => ({
+
+        if (profilesRes.data && profilesRes.data.length > 0) {
+            setProfiles((profilesRes.data as any[]).map(p => ({
                 role: p.role,
                 pin: p.pin,
                 layout_config: p.layout_config || DEFAULT_LAYOUT,
                 avatar_url: p.avatar_url
             })));
-        } else if (profilesData && profilesData.length === 0) {
-            // Table exists but is empty, try to initialize
+        } else if (profilesRes.data && profilesRes.data.length === 0) {
             console.log('Profiles table is empty, initializing default profiles...');
             const initialProfiles = ROLES.map(role => ({ role, pin: '1183' }));
             await supabase.from('profiles').insert(initialProfiles);
