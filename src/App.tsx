@@ -157,6 +157,189 @@ function LineChart({ data }: { data: number[] }) {
   );
 }
 
+type Message = {
+  id: string;
+  user: string;
+  content: string;
+  date: string;
+  likes: number;
+};
+
+const MESSAGES_KEY = 'family_goals_messages';
+
+function FamilyHero({ familyPts }: { familyPts: number }) {
+  return (
+    <div className="bg-gradient-to-br from-orange-400 to-red-500 rounded-[2rem] p-8 text-white shadow-xl mb-8 relative overflow-hidden">
+      <div className="absolute top-0 right-0 opacity-10 transform translate-x-1/4 -translate-y-1/4">
+        <Trophy className="w-80 h-80" />
+      </div>
+      <div className="relative z-10 flex flex-col items-center text-center">
+        <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-sm font-medium mb-4 border border-white/10">
+          <Crown className="w-4 h-4 text-yellow-300" />
+          家庭总积分
+        </div>
+        <div className="text-7xl font-black tracking-tighter mb-4 drop-shadow-sm">
+          {familyPts}
+        </div>
+        <div className="w-full max-w-md bg-black/20 h-3 rounded-full overflow-hidden backdrop-blur-sm mb-2">
+          <div 
+            className="h-full bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-1000"
+            style={{ width: `${(familyPts % 1000) / 10}%` }}
+          />
+        </div>
+        <p className="text-sm text-white/80 font-medium">
+          距离下一个家庭大奖还差 {1000 - (familyPts % 1000)} 分
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function RaceChart({ memberStats }: { memberStats: any[] }) {
+  const maxPoints = Math.max(...memberStats.map(s => s.earned), 100);
+  return (
+    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-stone-100 mb-8 relative overflow-hidden">
+      <div className="flex items-center justify-between mb-8">
+        <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
+          <TrendingUp className="w-6 h-6 text-blue-500" />
+          家庭成员大比拼
+        </h2>
+        <div className="text-xs font-medium text-stone-400 bg-stone-50 px-3 py-1 rounded-full">
+          谁是第一名？
+        </div>
+      </div>
+      
+      <div className="relative h-64 w-full">
+        {/* Mountain Background */}
+        <div className="absolute inset-0 flex items-end opacity-20 pointer-events-none">
+           <svg viewBox="0 0 400 200" preserveAspectRatio="none" className="w-full h-full text-stone-300 fill-current">
+             <path d="M0 200 L150 50 L250 120 L350 20 L400 200 Z" />
+           </svg>
+        </div>
+        
+        {/* Tracks */}
+        <div className="absolute inset-0 flex justify-around items-end px-4 pb-8">
+          {memberStats.map((member, index) => {
+            const percent = Math.min(Math.max((member.earned / maxPoints) * 100, 10), 100);
+            const isLeader = Math.max(...memberStats.map(m => m.earned)) === member.earned && member.earned > 0;
+            
+            return (
+              <div key={member.role} className="relative h-full w-16 flex flex-col justify-end items-center group">
+                {/* Bar/Line */}
+                <motion.div 
+                  initial={{ height: '0%' }}
+                  animate={{ height: `${percent}%` }}
+                  transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
+                  className="w-1 bg-stone-100 rounded-t-full absolute bottom-0"
+                />
+                
+                {/* Avatar */}
+                <motion.div
+                  initial={{ bottom: '0%' }}
+                  animate={{ bottom: `${percent}%` }}
+                  transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
+                  className="absolute mb-2 flex flex-col items-center z-10"
+                >
+                  <div className={`relative w-12 h-12 rounded-full border-4 shadow-lg flex items-center justify-center text-2xl bg-white transition-transform group-hover:scale-110 ${isLeader ? 'border-yellow-400 scale-110' : 'border-white'}`}>
+                    {member.role === '爸爸' ? '👨🏻' : member.role === '妈妈' ? '👩🏻' : member.role === '姐姐' ? '👧🏻' : '👶🏻'}
+                    {isLeader && (
+                      <div className="absolute -top-4 text-2xl animate-bounce">👑</div>
+                    )}
+                  </div>
+                  <div className="mt-2 bg-stone-800 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-md">
+                    {member.earned}分
+                  </div>
+                </motion.div>
+                
+                {/* Label */}
+                <div className="absolute -bottom-6 text-xs font-bold text-stone-500">
+                  {member.role}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DanmakuBoard({ messages, onSend }: { messages: Message[], onSend: (content: string) => void }) {
+  const [input, setInput] = useState('');
+  
+  return (
+    <div className="mb-8">
+      <div className="bg-stone-900 rounded-[2rem] p-1 shadow-lg overflow-hidden relative h-40 mb-4">
+        {/* Background Grid */}
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+        
+        <div className="absolute inset-0 overflow-hidden">
+          <AnimatePresence>
+            {messages.slice(-15).map((msg, i) => (
+              <motion.div
+                key={msg.id}
+                initial={{ x: '100%', opacity: 0 }}
+                animate={{ x: '-150%', opacity: 1 }}
+                transition={{ 
+                  duration: 10 + (msg.content.length * 0.2), 
+                  ease: "linear", 
+                  repeat: Infinity,
+                  delay: i * 0.5 
+                }}
+                className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white shadow-sm"
+                style={{ 
+                  top: `${(i % 5) * 18 + 10}%`,
+                  fontSize: `${Math.random() > 0.8 ? '1.1rem' : '0.9rem'}`
+                }}
+              >
+                <span className="font-bold text-yellow-400 text-xs">{msg.user}:</span>
+                <span>{msg.content}</span>
+                {msg.likes > 0 && <span className="text-xs text-pink-400 flex items-center">❤️ {msg.likes}</span>}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {messages.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center text-white/30 text-sm">
+              暂无弹幕，快来发送第一条！
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <form 
+        onSubmit={(e) => { 
+          e.preventDefault(); 
+          if(input.trim()) { 
+            onSend(input); 
+            setInput(''); 
+          } 
+        }}
+        className="flex gap-2"
+      >
+        <div className="relative flex-grow">
+          <input 
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="发送弹幕留言..."
+            className="w-full pl-5 pr-12 py-3 bg-white border border-stone-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all"
+          />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-stone-100 flex items-center justify-center text-stone-400">
+            <FileText className="w-4 h-4" />
+          </div>
+        </div>
+        <button 
+          type="submit" 
+          disabled={!input.trim()}
+          className="px-6 py-3 bg-indigo-500 text-white rounded-2xl font-bold shadow-md hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          <Upload className="w-4 h-4 rotate-90" />
+          发送
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function App() {
   if (!isSupabaseConfigured) {
     return (
@@ -205,6 +388,7 @@ export default function App() {
   const [achs, setAchs] = useState<Achievement[]>([]);
   const [rewards, setRewards] = useState<Reward[]>(DEFAULT_REWARDS);
   const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   // Load initial data
   useEffect(() => {
@@ -330,10 +514,16 @@ export default function App() {
     const init = async () => {
       await migrateData();
       await loadData();
+      const localMsgs = JSON.parse(localStorage.getItem(MESSAGES_KEY) || '[]');
+      setMessages(localMsgs);
     };
 
     init();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+  }, [messages]);
 
   // Realtime subscriptions
   useEffect(() => {
@@ -426,6 +616,8 @@ export default function App() {
   const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
   const [isRewardEditModalOpen, setIsRewardEditModalOpen] = useState(false);
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
+  
+  const [isMessageBoardOpen, setIsMessageBoardOpen] = useState(false);
 
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
@@ -468,6 +660,8 @@ export default function App() {
 
   const familyPts = memberStats.reduce((s, m) => s + m.pts, 0);
   const topGoals = [...goals].filter(g => g.progress < 100).sort((a, b) => getGoalScore(b) - getGoalScore(a)).slice(0, 5);
+
+  // --- New Components moved outside ---
 
   useEffect(() => {
     const newAchs: Achievement[] = [], newTxs: Transaction[] = [];
@@ -805,6 +999,23 @@ export default function App() {
     setEditingReward(null);
   };
 
+  const handleAddMessage = (content: string) => {
+    if (!currentUser) return;
+    const newMsg: Message = {
+      id: generateId(),
+      user: currentUser,
+      content,
+      date: new Date().toISOString(),
+      likes: 0
+    };
+    setMessages(prev => [newMsg, ...prev]);
+    showToast('留言已发布');
+  };
+
+  const handleLikeMessage = (id: string) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, likes: m.likes + 1 } : m));
+  };
+
   const leaderboard = useMemo(() => {
     const now = new Date().getTime();
     return ROLES.map(role => {
@@ -979,292 +1190,183 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Rules Section */}
-        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
-          <h2 className="text-lg font-bold text-stone-900 mb-3 flex items-center gap-2">
-            <Info className="w-5 h-5 text-blue-500" />
-            积分规则说明
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm text-stone-600">
-            <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-              <p className="font-bold text-stone-800 mb-1">🎯 基础奖励</p>
-              <p>完成目标: <span className="text-emerald-600 font-bold">+10分</span></p>
-            </div>
-            <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-              <p className="font-bold text-stone-800 mb-1">⚡ 额外加分</p>
-              <p>提前完成: <span className="text-emerald-600 font-bold">+3分</span></p>
-              <p>连续完成3个: <span className="text-emerald-600 font-bold">+8分</span></p>
-            </div>
-            <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-              <p className="font-bold text-stone-800 mb-1">🤝 团队协作</p>
-              <p>多人共同完成目标，每人额外获得 <span className="text-emerald-600 font-bold">+5分</span></p>
-            </div>
-            <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-              <p className="font-bold text-stone-800 mb-1">🎁 积分兑换</p>
-              <p>使用积分可以兑换家庭奖励，如选择电影、免做家务等。</p>
-            </div>
-          </div>
-        </div>
+        <main className="max-w-5xl mx-auto px-4 pb-24 space-y-8">
+          
+          {/* 1. Family Hero Section (Total Points) */}
+          <FamilyHero familyPts={familyPts} />
 
-        {/* Family Total Points */}
-        <div className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl p-6 text-white shadow-md flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex flex-col gap-4">
-            <div>
-              <p className="text-orange-100 font-medium mb-1">家庭总积分</p>
-              <p className="text-4xl font-bold flex items-center gap-2"><Star className="w-8 h-8 text-yellow-300 fill-current" /> {familyPts}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {memberStats.map(stat => (
-                <div key={stat.role} className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-lg text-sm">
-                  <span className="text-orange-50">{stat.role}:</span>
-                  <span className="font-bold">{stat.pts}</span>
+          {/* 2. Danmaku Board */}
+          <DanmakuBoard messages={messages} onSend={handleAddMessage} />
+
+          {/* 3. Race Chart (Mountain) */}
+          <RaceChart memberStats={memberStats} />
+
+          {/* 4. Personal Dashboard (If logged in) */}
+          {currentUser && (
+            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[2rem] p-6 text-white shadow-lg">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl border-2 border-white/30">
+                    {currentUser === '爸爸' ? '👨🏻' : currentUser === '妈妈' ? '👩🏻' : currentUser === '姐姐' ? '👧🏻' : '👶🏻'}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">我的概览</h3>
+                    <p className="text-white/80 text-xs">加油，{currentUser}！</p>
+                  </div>
                 </div>
-              ))}
+                <div className="text-right">
+                  <div className="text-3xl font-black">{memberStats.find(m => m.role === currentUser)?.pts || 0}</div>
+                  <div className="text-xs text-white/60">当前积分</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
+                  <div className="text-xs text-white/60 mb-1">待办任务</div>
+                  <div className="font-bold text-lg">
+                    {goals.filter(g => (g.assignees?.includes(currentUser) || g.assignee === currentUser) && g.progress < 100).length}
+                  </div>
+                </div>
+                <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
+                  <div className="text-xs text-white/60 mb-1">本周获得</div>
+                  <div className="font-bold text-lg">
+                    {memberStats.find(m => m.role === currentUser)?.weekly.reduce((a,b)=>a+b, 0) || 0}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex-grow w-full max-w-md bg-white/20 p-4 rounded-xl">
-            <p className="text-sm font-medium mb-2 flex justify-between">
-              <span>集体奖励进度: 周末野餐</span>
-              <span>{Math.min(familyPts, 500)} / 500</span>
-            </p>
-            <div className="h-2 bg-black/20 rounded-full overflow-hidden">
-              <div className="h-full bg-yellow-300 rounded-full" style={{ width: `${Math.min(100, (familyPts/500)*100)}%` }}></div>
-            </div>
-          </div>
-        </div>
+          )}
 
-        {/* Filters & Goals Grid */}
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
-              <Target className="w-6 h-6 text-orange-500" />
-              任务列表
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-2 sm:pb-0 no-scrollbar">
+          {/* 5. Task Center */}
+          <div className="bg-stone-50 rounded-[2.5rem] p-6 sm:p-8">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
+                <Target className="w-7 h-7 text-orange-500" />
+                任务中心
+              </h2>
+              <button 
+                onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
+                className="bg-stone-900 hover:bg-stone-800 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-stone-200 transition-all flex items-center gap-2 text-sm"
+              >
+                <Plus className="w-4 h-4" /> 新建任务
+              </button>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
               {(['全部', '规划中', '进行中', '待确认', '已完成'] as FilterType[]).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     filter === f 
-                      ? 'bg-stone-800 text-white' 
-                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                      ? 'bg-stone-900 text-white shadow-md' 
+                      : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
                   }`}
                 >
                   {f}
                 </button>
               ))}
             </div>
-          </div>
 
-          {filteredGoals.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-stone-100 shadow-sm">
-              <Target className="w-12 h-12 text-stone-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-stone-900 mb-1">未找到目标</h3>
-              <p className="text-stone-500">
-                {filter === '全部' ? "开始创建一个新的家庭目标吧！" : `当前没有${filter}的目标。`}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <AnimatePresence mode="popLayout">
-                {filteredGoals.map(goal => (
-                  <GoalCard 
-                    key={goal.id} 
-                    goal={goal} 
-                    currentUser={currentUser}
-                    onAddProgress={() => handleAddProgress(goal.id)}
-                    onMarkAsDone={() => handleMarkAsDone(goal.id)}
-                    onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
-                    onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
-                    onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            {/* Top 5 Important Goals */}
-            {topGoals.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
-                <h2 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
-                  <Flag className="w-5 h-5 text-red-500" />
-                  最重要目标 Top 5
-                </h2>
-                <div className="space-y-3">
-                  {topGoals.map(goal => (
-                    <div key={goal.id} className="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-100 hover:bg-stone-100 transition-colors">
-                      <div className="flex items-center gap-3 flex-grow min-w-0">
-                        <WarningLight status={getWarningStatus(goal)} />
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-stone-900 truncate">{goal.name}</p>
-                          <p className="text-xs text-stone-500 flex gap-2">
-                            <span>发起人: {goal.creator || '管理员'}</span>
-                            <span className="hidden sm:inline">•</span>
-                            <span>责任人: {(goal.assignees || [goal.assignee]).join(', ')}</span>
-                            <span className="hidden sm:inline">•</span>
-                            <span className="hidden sm:inline">优先级: {goal.priority}</span>
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 ml-4 shrink-0">
-                        <div className="text-right hidden sm:block">
-                          <p className="text-xs font-medium text-stone-700">进度: {goal.progress}%</p>
-                          <div className="w-24 h-1.5 bg-stone-200 rounded-full mt-1">
-                            <div className="h-full bg-orange-500 rounded-full" style={{ width: `${goal.progress}%` }} />
-                          </div>
-                        </div>
-                        <div className="text-xs font-medium text-stone-500 w-16 text-right">
-                          {goal.endDate.slice(5)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+            {/* Task Grid */}
+            {filteredGoals.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-3xl border border-stone-100 border-dashed">
+                <div className="w-16 h-16 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Target className="w-8 h-8 text-stone-300" />
                 </div>
+                <p className="text-stone-500 font-medium">暂无相关任务</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AnimatePresence mode="popLayout">
+                  {filteredGoals.map(goal => (
+                    <GoalCard 
+                      key={goal.id} 
+                      goal={goal} 
+                      currentUser={currentUser}
+                      onAddProgress={() => handleAddProgress(goal.id)}
+                      onMarkAsDone={() => handleMarkAsDone(goal.id)}
+                      onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
+                      onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
+                      onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
+                    />
+                  ))}
+                </AnimatePresence>
               </div>
             )}
+          </div>
 
-            {/* Member Overview & Trends */}
-            <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
-              <h2 className="text-lg font-bold text-stone-900 mb-4 flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-500" />
-                成员概况与趋势
+          {/* 6. Rewards Section (Moved to bottom) */}
+          <div className="bg-white rounded-[2.5rem] p-6 sm:p-8 shadow-sm border border-stone-100">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
+                <Gift className="w-7 h-7 text-pink-500" />
+                积分兑换
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {memberStats.map(stat => (
-                  <div key={stat.role} className="p-4 rounded-xl bg-stone-50 border border-stone-100 relative flex flex-col">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-bold text-stone-900">{stat.role}</span>
-                        <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full border bg-white ${stat.badgeColor} inline-flex items-center gap-1`}>
-                          <Medal className="w-3 h-3" /> {stat.badge}
-                        </span>
-                      </div>
-                      <WarningLight status={stat.warning} />
+              <button 
+                onClick={() => setIsRewardModalOpen(true)}
+                className="text-stone-400 hover:text-stone-600 p-2 hover:bg-stone-50 rounded-full transition-colors"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {rewards.filter(r => r.isActive).map(reward => (
+                <div key={reward.id} className="bg-stone-50 rounded-2xl p-5 border border-stone-100 hover:border-pink-200 hover:shadow-md transition-all group">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-pink-500 shadow-sm">
+                      {ICONS[reward.iconName || 'Gift'] ? React.createElement(ICONS[reward.iconName || 'Gift'], { className: "w-5 h-5" }) : <Gift className="w-5 h-5" />}
                     </div>
-                    <div className="flex justify-between items-end mb-3">
-                      <div>
-                        <p className="text-xs text-stone-500">当前可用积分</p>
-                        <p className="text-2xl font-bold text-orange-600">{stat.pts}</p>
-                      </div>
-                      <button onClick={() => setHistoryModal(stat.role)} className="text-xs text-blue-500 hover:underline flex items-center gap-1 cursor-pointer">
-                        <History className="w-3 h-3" /> 历史
-                      </button>
-                    </div>
-                    <div className="h-12 border-t border-stone-200 pt-2 mb-2">
-                      <p className="text-[10px] text-stone-400 mb-1">近4周积分获取趋势</p>
-                      <LineChart data={stat.weekly} />
-                    </div>
-                    <div className="flex gap-1 overflow-x-auto pt-2 border-t border-stone-200 mt-auto">
-                      {achs.filter(a => a.member === stat.role).map(a => {
-                        const def = ACHIEVEMENTS.find(d => d.id === a.achId);
-                        if (!def) return null;
-                        const Icon = def.icon;
-                        return (
-                          <div key={a.id} title={def.name} className={`w-6 h-6 rounded-full bg-white border border-stone-200 flex items-center justify-center shrink-0 ${def.color}`}>
-                            <Icon className="w-3 h-3" />
-                          </div>
-                        );
-                      })}
+                    <div className="bg-pink-100 text-pink-600 px-2 py-1 rounded-lg text-xs font-bold">
+                      {reward.cost} 分
                     </div>
                   </div>
-                ))}
-              </div>
+                  <h3 className="font-bold text-stone-900 mb-1">{reward.name}</h3>
+                  <p className="text-xs text-stone-500 mb-4 h-8 line-clamp-2">{reward.description || '暂无描述'}</p>
+                  <button 
+                    onClick={() => handleRedeem(currentUser || '爸爸', reward)}
+                    disabled={!currentUser}
+                    className="w-full py-2 bg-white border border-stone-200 text-stone-600 rounded-xl text-sm font-bold hover:bg-pink-500 hover:text-white hover:border-pink-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    立即兑换
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="space-y-6">
-            {/* Leaderboard */}
-            <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                  <Trophy className="w-5 h-5 text-yellow-500" /> 排行榜
-                </h2>
-                <select 
-                  value={lbTab} 
-                  onChange={e => setLbTab(e.target.value as any)} 
-                  className="text-xs border border-stone-200 rounded-md p-1 outline-none bg-white cursor-pointer"
-                >
-                  <option value="total">总分</option>
-                  <option value="weekly">本周</option>
-                  <option value="daily">今日</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                {leaderboard.map((m, i) => (
-                  <div key={m.role} className="flex items-center justify-between p-2 rounded-lg bg-stone-50 border border-stone-100">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${i===0?'bg-yellow-100 text-yellow-600':i===1?'bg-slate-200 text-slate-600':i===2?'bg-amber-100 text-amber-700':'bg-stone-200 text-stone-500'}`}>
-                        {i+1}
-                      </div>
-                      <span className="text-sm font-bold">{m.role}</span>
-                    </div>
-                    <span className="font-bold text-orange-600 text-sm">{m.pts} 分</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Point Rewards */}
-            <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                  <Gift className="w-5 h-5 text-pink-500" /> 积分兑换
-                </h2>
-                <div className="flex items-center gap-3">
-                  {currentUser === '管理员' && (
-                    <button onClick={() => setIsRewardModalOpen(true)} className="text-sm text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1 cursor-pointer">
-                      <Settings className="w-4 h-4" /> 管理奖励
-                    </button>
-                  )}
-                  <select 
-                    value={rewardMember} 
-                    onChange={e => setRewardMember(e.target.value)} 
-                    className="text-xs border border-stone-200 rounded-md p-1 outline-none bg-white cursor-pointer"
-                  >
-                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
+          {/* 7. Rules (Light Style) */}
+          <div className="py-8 text-center">
+            <div className="inline-block bg-stone-100 rounded-3xl p-6 max-w-4xl mx-auto">
+              <h2 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-6 flex items-center justify-center gap-2">
+                <Info className="w-4 h-4" />
+                积分规则说明
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-left">
+                <div className="space-y-1">
+                  <div className="text-xs text-stone-400">基础奖励</div>
+                  <div className="font-bold text-stone-700">完成目标 <span className="text-emerald-500">+10</span></div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-stone-400">额外加分</div>
+                  <div className="font-bold text-stone-700">提前完成 <span className="text-blue-500">+3</span></div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-stone-400">团队协作</div>
+                  <div className="font-bold text-stone-700">多人完成 <span className="text-purple-500">+5/人</span></div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-stone-400">连胜奖励</div>
+                  <div className="font-bold text-stone-700">三连胜 <span className="text-orange-500">+8</span></div>
                 </div>
               </div>
-              <div className="space-y-3">
-                {rewards.filter(r => r.isActive).map(r => {
-                  const pts = memberStats.find(m => m.role === rewardMember)?.pts || 0;
-                  const can = pts >= r.cost;
-                  const Icon = r.iconName && ICONS[r.iconName] ? ICONS[r.iconName] : Gift;
-                  return (
-                    <div key={r.id} className={`p-3 rounded-xl border ${can ? 'border-pink-200 bg-pink-50' : 'border-stone-100 bg-stone-50'} flex items-center justify-between`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${can ? 'bg-pink-100 text-pink-500' : 'bg-stone-200 text-stone-400'}`}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-bold text-stone-800">{r.name}</p>
-                            {r.isCustom && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">自定义</span>}
-                          </div>
-                          <p className="text-[10px] text-stone-500">{r.cost} 积分</p>
-                        </div>
-                      </div>
-                      <button 
-                        disabled={!can} 
-                        onClick={() => handleRedeem(rewardMember, r)} 
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${can ? 'bg-pink-500 text-white hover:bg-pink-600' : 'bg-stone-200 text-stone-400 cursor-not-allowed'}`}
-                      >
-                        兑换
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </div>
-        </div>
 
-      </main>
+        </main>
+
+
 
       {/* Modals */}
       <AnimatePresence>
@@ -1336,7 +1438,98 @@ export default function App() {
             }}
           />
         )}
+        {isMessageBoardOpen && (
+          <MessageBoardModal
+            messages={messages}
+            currentUser={currentUser}
+            onClose={() => setIsMessageBoardOpen(false)}
+            onSend={handleAddMessage}
+            onLike={handleLikeMessage}
+          />
+        )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function MessageBoardModal({ messages, currentUser, onClose, onSend, onLike }: { messages: Message[], currentUser: string, onClose: () => void, onSend: (content: string) => void, onLike: (id: string) => void }) {
+  const [content, setContent] = useState('');
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col h-[600px]">
+        <div className="p-4 bg-indigo-500 text-white flex justify-between items-center">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <FileText className="w-5 h-5" /> 家庭留言板
+          </h2>
+          <button onClick={onClose} className="text-white/80 hover:text-white cursor-pointer">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        
+        <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-stone-50" ref={scrollRef}>
+          {messages.length === 0 ? (
+            <div className="text-center text-stone-400 py-10">
+              <p>还没有留言，快来抢沙发！</p>
+            </div>
+          ) : (
+            messages.map(msg => {
+              const isMe = msg.user === currentUser;
+              return (
+                <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-stone-600">{msg.user}</span>
+                    <span className="text-[10px] text-stone-400">{new Date(msg.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  </div>
+                  <div className={`p-3 rounded-2xl max-w-[80%] text-sm relative group ${isMe ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-white border border-stone-200 text-stone-800 rounded-tl-none'}`}>
+                    {msg.content}
+                    <button 
+                      onClick={() => onLike(msg.id)}
+                      className={`absolute -bottom-3 ${isMe ? '-left-8' : '-right-8'} bg-white border border-stone-100 shadow-sm rounded-full px-1.5 py-0.5 text-[10px] flex items-center gap-0.5 text-stone-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100`}
+                    >
+                      <Heart className={`w-3 h-3 ${msg.likes > 0 ? 'fill-red-500 text-red-500' : ''}`} /> {msg.likes}
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="p-4 bg-white border-t border-stone-100">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (content.trim()) {
+                onSend(content);
+                setContent('');
+              }
+            }}
+            className="flex gap-2"
+          >
+            <input 
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              placeholder="说点什么..."
+              className="flex-grow px-4 py-2 bg-stone-100 rounded-full outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+            />
+            <button 
+              type="submit"
+              disabled={!content.trim()}
+              className="w-10 h-10 bg-indigo-500 text-white rounded-full flex items-center justify-center hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <Upload className="w-5 h-5 rotate-90" />
+            </button>
+          </form>
+        </div>
+      </motion.div>
     </div>
   );
 }
