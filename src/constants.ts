@@ -4,7 +4,7 @@ import {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image
 } from 'lucide-react';
 import { LayoutComponentId, LayoutConfig, Priority, Reward } from './types';
 
@@ -32,7 +32,7 @@ export const ICONS: Record<string, React.ElementType> = {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image
 };
 
 export const DEFAULT_REWARDS: Reward[] = [
@@ -51,6 +51,29 @@ export const AVATARS = [
   '👶🏻', '👶🏼', '👶🏽', '👶🏾', '👶🏿',
   '👴🏻', '👵🏻', '🧔🏻', '👱🏻‍♀️', '👱🏻',
   '🐱', '🐶', '🦊', '🐻', '🐼', '🦁', '🐯', '🐮', '🐷', '🐸'
+];
+
+export const DANMAKU_EMOJIS = [
+  '👍', '❤️', '😂', '😮', '👏', '🎉', '🔥', '💯', '🚀', '🌟', '💪', '🙏', '👻', '💩', '🌹'
+];
+
+export const DANMAKU_SPEEDS = [
+  { label: '慢', value: 15 },
+  { label: '中', value: 10 },
+  { label: '快', value: 5 }
+];
+
+export const DANMAKU_EFFECTS = [
+  { label: '默认', value: 'default' },
+  { label: '闪烁', value: 'blink' },
+  { label: '放大', value: 'zoom' },
+  { label: '旋转', value: 'rotate' }
+];
+
+export const DANMAKU_DURATIONS = [
+  { label: '1天', value: 24 * 60 * 60 * 1000 },
+  { label: '1周', value: 7 * 24 * 60 * 60 * 1000 },
+  { label: '永久', value: -1 }
 ];
 
 export const MESSAGE_COLORS = [

@@ -67,4 +67,8 @@ export type Message = {
   avatar?: string;
   color?: string;
   font_size?: string;
+  emoji?: string;
+  speed?: number;
+  effect?: string;
+  duration?: number;
 };

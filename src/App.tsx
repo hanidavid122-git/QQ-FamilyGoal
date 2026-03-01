@@ -6,7 +6,7 @@ import {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Camera
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image as ImageIcon
 } from 'lucide-react';
 
 import { 
@@ -15,7 +15,8 @@ import {
 } from './types';
 import { 
   ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
-  DEFAULT_REWARDS, ICONS, AVATARS, MESSAGE_COLORS
+  DEFAULT_REWARDS, ICONS, AVATARS, MESSAGE_COLORS,
+  DANMAKU_EMOJIS, DANMAKU_SPEEDS, DANMAKU_EFFECTS, DANMAKU_DURATIONS
 } from './constants';
 import { LoginModal } from './components/LoginModal';
 import { LayoutSettingsModal } from './components/LayoutSettingsModal';
@@ -211,18 +212,26 @@ function RaceChart({ memberStats, profiles }: { memberStats: any[], profiles: Pr
   );
 }
 
-function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: Message[], onSend: (content: string, avatar?: string, color?: string, fontSize?: string) => void, currentUser: string | null, profiles: Profile[] }) {
+function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: Message[], onSend: (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => void, currentUser: string | null, profiles: Profile[] }) {
   const [input, setInput] = useState('');
-  const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
   const [selectedColor, setSelectedColor] = useState(MESSAGE_COLORS[0]);
   const [selectedFontSize, setSelectedFontSize] = useState('0.9rem');
+  const [selectedSpeed, setSelectedSpeed] = useState(10);
+  const [selectedEffect, setSelectedEffect] = useState('default');
+  const [selectedDuration, setSelectedDuration] = useState(24 * 60 * 60 * 1000);
   const [showPicker, setShowPicker] = useState(false);
   
   return (
     <div className="mb-8">
-      <div className="bg-stone-900 rounded-[2rem] p-1 shadow-lg overflow-hidden relative h-48 mb-4">
-        {/* Background Grid */}
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+      <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-48 mb-4 border border-stone-100">
+        {/* Background Image */}
+        <div className="absolute inset-0" style={{ 
+          backgroundImage: 'url("https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=1000&auto=format&fit=crop")',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.2
+        }}></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-white/60 to-transparent"></div>
         
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
@@ -230,30 +239,39 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
               <motion.div
                 key={msg.id}
                 initial={{ x: '100%', opacity: 0 }}
-                animate={{ x: '-150%', opacity: 1 }}
-                transition={{ 
-                  duration: 10 + (msg.content.length * 0.2), 
-                  ease: "linear", 
-                  repeat: Infinity,
-                  delay: i * 0.5 
+                animate={{ 
+                  x: '-150%', 
+                  opacity: msg.effect === 'blink' ? [1, 0.5, 1] : 1,
+                  scale: msg.effect === 'zoom' ? [1, 1.2, 1] : 1,
+                  rotate: msg.effect === 'rotate' ? [0, 5, -5, 0] : 0
                 }}
-                className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white shadow-sm"
+                transition={{ 
+                  x: {
+                    duration: msg.speed || 10, 
+                    ease: "linear", 
+                    repeat: Infinity,
+                    delay: i * 0.5 
+                  },
+                  opacity: { duration: 0.5, repeat: Infinity },
+                  scale: { duration: 1, repeat: Infinity },
+                  rotate: { duration: 1, repeat: Infinity }
+                }}
+                className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm"
                 style={{ 
                   top: `${(i % 5) * 18 + 10}%`,
                   fontSize: msg.font_size || '0.9rem',
-                  color: msg.color || '#ffffff'
+                  color: msg.color || '#000000'
                 }}
               >
                 <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
-                {msg.avatar && <span className="text-lg">{msg.avatar}</span>}
-                <span className="font-bold text-yellow-400 text-xs">{msg.user}:</span>
+                <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
                 <span style={{ color: msg.color }}>{msg.content}</span>
                 {msg.likes > 0 && <span className="text-xs text-pink-400 flex items-center">❤️ {msg.likes}</span>}
               </motion.div>
             ))}
           </AnimatePresence>
           {messages.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-white/30 text-sm">
+            <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
               暂无弹幕，快来发送第一条！
             </div>
           )}
@@ -264,7 +282,7 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
         onSubmit={(e) => { 
           e.preventDefault(); 
           if(input.trim()) { 
-            onSend(input, selectedAvatar, selectedColor, selectedFontSize); 
+            onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration); 
             setInput(''); 
           } 
         }}
@@ -306,21 +324,6 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
             >
               <div className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">选择表情</div>
-                    <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto p-1 no-scrollbar">
-                      {AVATARS.map(a => (
-                        <button
-                          key={a}
-                          type="button"
-                          onClick={() => setSelectedAvatar(a)}
-                          className={`text-xl p-1 rounded-lg transition-all ${selectedAvatar === a ? 'bg-indigo-100 scale-110' : 'hover:bg-stone-100'}`}
-                        >
-                          {a}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                   <div className="space-y-4">
                     <div>
                       <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">选择颜色</div>
@@ -336,6 +339,8 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                         ))}
                       </div>
                     </div>
+                  </div>
+                  <div className="space-y-4">
                     <div>
                       <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">字体大小</div>
                       <div className="flex gap-2">
@@ -352,6 +357,54 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                       </div>
                     </div>
                   </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4 border-t border-stone-100 pt-4">
+                    <div>
+                        <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">速度</div>
+                        <div className="flex gap-2">
+                            {DANMAKU_SPEEDS.map(s => (
+                                <button
+                                    key={s.label}
+                                    type="button"
+                                    onClick={() => setSelectedSpeed(s.value)}
+                                    className={`flex-1 py-1 rounded-lg text-xs font-bold border transition-all ${selectedSpeed === s.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                                >
+                                    {s.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">特效</div>
+                        <div className="flex gap-2 flex-wrap">
+                            {DANMAKU_EFFECTS.map(e => (
+                                <button
+                                    key={e.value}
+                                    type="button"
+                                    onClick={() => setSelectedEffect(e.value)}
+                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${selectedEffect === e.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                                >
+                                    {e.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">时长</div>
+                        <div className="flex gap-2 flex-wrap">
+                            {DANMAKU_DURATIONS.map(d => (
+                                <button
+                                    key={d.label}
+                                    type="button"
+                                    onClick={() => setSelectedDuration(d.value)}
+                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${selectedDuration === d.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                                >
+                                    {d.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
               </div>
             </motion.div>
@@ -575,16 +628,27 @@ export default function App() {
           })));
         }
         if (msgsData) {
-          setMessages(msgsData.map(m => ({
-            id: m.id,
-            user: m.user_name,
-            content: m.content,
-            date: m.date,
-            likes: m.likes,
-            avatar: m.avatar,
-            color: m.color,
-            font_size: m.font_size
-          })));
+          setMessages(msgsData.map(m => {
+            let extra: any = {};
+            try {
+              if (m.avatar && m.avatar.startsWith('{')) {
+                extra = JSON.parse(m.avatar);
+              }
+            } catch(e) {}
+            return {
+              id: m.id,
+              user: m.user_name,
+              content: m.content,
+              date: m.date,
+              likes: m.likes,
+              avatar: m.avatar,
+              color: m.color,
+              font_size: m.font_size,
+              speed: extra.s,
+              effect: extra.e,
+              duration: extra.d
+            };
+          }));
         }
         if (profilesData && profilesData.length > 0) {
             setProfiles(profilesData.map(p => ({
@@ -1132,17 +1196,21 @@ export default function App() {
     setEditingReward(null);
   };
 
-  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string) => {
+  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => {
     if (!currentUser) return;
+    
+    // Serialize extra fields into avatar since we can't alter DB schema easily
+    const extraData = JSON.stringify({ s: speed, e: effect, d: duration });
+    
     const newMsg = {
       id: generateId(),
       user_name: currentUser,
       content,
       date: new Date().toISOString(),
       likes: 0,
-      avatar,
+      avatar: extraData,
       color,
-      font_size: fontSize
+      font_size: fontSize || '0.9rem'
     };
     
     // Optimistic update
@@ -1154,15 +1222,24 @@ export default function App() {
         likes: newMsg.likes,
         avatar: newMsg.avatar,
         color: newMsg.color,
-        font_size: newMsg.font_size
+        font_size: newMsg.font_size,
+        speed,
+        effect,
+        duration
     }]);
     
     try {
-        await supabase.from('messages').insert(newMsg);
+        const { error } = await supabase.from('messages').insert(newMsg);
+        if (error) {
+            console.error('Supabase insert error:', error);
+            throw error;
+        }
         showToast('留言已发布');
     } catch (e) {
-        console.error(e);
+        console.error('Message send failed:', e);
         showToast('发送失败', 'error');
+        // Revert optimistic update on failure
+        setMessages(prev => prev.filter(m => m.id !== newMsg.id));
     }
   };
 
@@ -2500,6 +2577,28 @@ function UserSettingsModal({ role, currentAvatar, onClose, onUpdateAvatar }: { r
           </div>
 
           <div className="grid grid-cols-5 gap-3 max-h-60 overflow-y-auto p-2 no-scrollbar">
+            <button
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                      const result = e.target?.result as string;
+                      onUpdateAvatar(result);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                };
+                input.click();
+              }}
+              className="text-3xl p-2 rounded-xl transition-all hover:scale-110 hover:bg-stone-50 flex items-center justify-center text-stone-400"
+            >
+              <ImageIcon className="w-8 h-8" />
+            </button>
             {AVATARS.map(a => (
               <button
                 key={a}
