@@ -4,6 +4,8 @@ drop table if exists public.transactions cascade;
 drop table if exists public.achievements cascade;
 drop table if exists public.checkins cascade;
 drop table if exists public.rewards cascade;
+drop table if exists public.messages cascade;
+drop table if exists public.profiles cascade;
 
 -- 2. 开启实时同步功能
 begin;
@@ -67,6 +69,23 @@ create table public.rewards (
   updated_at timestamptz not null default now()
 );
 
+create table public.messages (
+  id text primary key,
+  user_name text not null,
+  content text not null,
+  date timestamptz not null default now(),
+  likes integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table public.profiles (
+  role text primary key,
+  pin text not null default '1234',
+  layout_config jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- 4. 插入默认奖励
 insert into public.rewards (id, name, cost, is_active, is_custom, icon_name) values
   ('r1', '选择家庭电影', 100, true, false, 'Film'),
@@ -76,18 +95,29 @@ insert into public.rewards (id, name, cost, is_active, is_custom, icon_name) val
   ('r5', '额外游戏时间', 50, true, false, 'Gamepad')
 on conflict (id) do nothing;
 
+insert into public.profiles (role, pin) values
+  ('爸爸', '1234'),
+  ('妈妈', '1234'),
+  ('姐姐', '1234'),
+  ('妹妹', '1234')
+on conflict (role) do nothing;
+
 -- 5. 配置权限（允许你的纯前端应用直接读写）
 alter table public.goals enable row level security;
 alter table public.transactions enable row level security;
 alter table public.achievements enable row level security;
 alter table public.checkins enable row level security;
 alter table public.rewards enable row level security;
+alter table public.messages enable row level security;
+alter table public.profiles enable row level security;
 
 create policy "Allow anonymous access to goals" on public.goals for all using (true) with check (true);
 create policy "Allow anonymous access to transactions" on public.transactions for all using (true) with check (true);
 create policy "Allow anonymous access to achievements" on public.achievements for all using (true) with check (true);
 create policy "Allow anonymous access to checkins" on public.checkins for all using (true) with check (true);
 create policy "Allow anonymous access to rewards" on public.rewards for all using (true) with check (true);
+create policy "Allow anonymous access to messages" on public.messages for all using (true) with check (true);
+create policy "Allow anonymous access to profiles" on public.profiles for all using (true) with check (true);
 
 -- 6. 添加表到实时同步
 alter publication supabase_realtime add table public.goals;
@@ -95,3 +125,5 @@ alter publication supabase_realtime add table public.transactions;
 alter publication supabase_realtime add table public.achievements;
 alter publication supabase_realtime add table public.checkins;
 alter publication supabase_realtime add table public.rewards;
+alter publication supabase_realtime add table public.messages;
+alter publication supabase_realtime add table public.profiles;

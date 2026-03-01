@@ -9,51 +9,16 @@ import {
   Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle
 } from 'lucide-react';
 
-type Priority = '高' | '中' | '低';
-
-type Goal = {
-  id: string;
-  name: string;
-  description: string;
-  startDate: string;
-  endDate: string;
-  progress: number;
-  creator: string;
-  assignees: string[];
-  assignee?: string;
-  signature: string;
-  priority: Priority;
-  completedAt?: string;
-  confirmations?: Record<string, boolean>;
-};
-
-type Transaction = {
-  id: string;
-  date: string;
-  member: string;
-  amount: number;
-  reason: string;
-  type: 'earned' | 'redeemed';
-};
-
-type Achievement = {
-  id: string;
-  member: string;
-  achId: string;
-  date: string;
-};
-
-type Reward = {
-  id: string;
-  name: string;
-  cost: number;
-  description?: string;
-  isActive: boolean;
-  isCustom: boolean;
-  iconName?: string;
-};
-
-type FilterType = '全部' | '规划中' | '进行中' | '待确认' | '已完成';
+import { 
+  Priority, Goal, Transaction, Achievement, Reward, FilterType, 
+  LayoutComponentId, LayoutConfig, Profile 
+} from './types';
+import { 
+  ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
+  DEFAULT_REWARDS, ICONS 
+} from './constants';
+import { LoginModal } from './components/LoginModal';
+import { LayoutSettingsModal } from './components/LayoutSettingsModal';
 
 const STORAGE_KEY = 'family_goals_data';
 const TX_KEY = 'family_goals_txs';
@@ -62,21 +27,6 @@ const CHECKIN_KEY = 'family_goals_checkins';
 const REWARDS_KEY = 'family_goals_rewards';
 const CURRENT_USER_KEY = 'family_goals_current_user';
 
-const ROLES = ['爸爸', '妈妈', '姐姐', '妹妹'];
-const ALL_ROLES = [...ROLES, '管理员'];
-const PRIORITIES: Priority[] = ['高', '中', '低'];
-
-const DEFAULT_REWARDS: Reward[] = [
-  { id: 'r1', name: '选择家庭电影', cost: 100, isActive: true, isCustom: false, iconName: 'Film' },
-  { id: 'r2', name: '免做家务一天', cost: 200, isActive: true, isCustom: false, iconName: 'Target' },
-  { id: 'r3', name: '自选家庭出游', cost: 300, isActive: true, isCustom: false, iconName: 'Car' },
-  { id: 'r4', name: '最爱晚餐点菜权', cost: 150, isActive: true, isCustom: false, iconName: 'Utensils' },
-  { id: 'r5', name: '额外游戏时间', cost: 50, isActive: true, isCustom: false, iconName: 'Gamepad' }
-];
-
-const ICONS: Record<string, React.ElementType> = {
-  Film, Target, Car, Utensils, Gamepad, Gift
-};
 
 const ACHIEVEMENTS = [
   { id: 'a1', name: '首个目标', desc: '完成第一个目标', bonus: 5, icon: Flag, color: 'text-blue-500' },
@@ -389,6 +339,11 @@ export default function App() {
   const [rewards, setRewards] = useState<Reward[]>(DEFAULT_REWARDS);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [layout, setLayout] = useState<LayoutConfig>(DEFAULT_LAYOUT);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [loginRole, setLoginRole] = useState<string | null>(null);
+  const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -440,6 +395,15 @@ export default function App() {
           }));
           await supabase.from('rewards').upsert(mappedRewards);
         }
+        
+        // Insert default profiles if not exist
+        const { data: existingProfiles } = await supabase.from('profiles').select('role');
+        const existingRoles = existingProfiles?.map(p => p.role) || [];
+        const missingRoles = ROLES.filter(r => !existingRoles.includes(r));
+        
+        if (missingRoles.length > 0) {
+            await supabase.from('profiles').insert(missingRoles.map(r => ({ role: r, pin: '1234' })));
+        }
 
         localStorage.setItem('family_goals_migrated', 'true');
       } catch (e) {
@@ -454,12 +418,16 @@ export default function App() {
           { data: goalsData },
           { data: txsData },
           { data: achsData },
-          { data: rewardsData }
+          { data: rewardsData },
+          { data: msgsData },
+          { data: profilesData }
         ] = await Promise.all([
           supabase.from('goals').select('*'),
           supabase.from('transactions').select('*'),
           supabase.from('achievements').select('*'),
-          supabase.from('rewards').select('*')
+          supabase.from('rewards').select('*'),
+          supabase.from('messages').select('*').order('date', { ascending: true }),
+          supabase.from('profiles').select('*')
         ]);
 
         if (goalsData) {
@@ -504,6 +472,22 @@ export default function App() {
             iconName: r.icon_name
           })));
         }
+        if (msgsData) {
+          setMessages(msgsData.map(m => ({
+            id: m.id,
+            user: m.user_name,
+            content: m.content,
+            date: m.date,
+            likes: m.likes
+          })));
+        }
+        if (profilesData) {
+            setProfiles(profilesData.map(p => ({
+                role: p.role,
+                pin: p.pin,
+                layout_config: p.layout_config || DEFAULT_LAYOUT
+            })));
+        }
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -514,16 +498,12 @@ export default function App() {
     const init = async () => {
       await migrateData();
       await loadData();
-      const localMsgs = JSON.parse(localStorage.getItem(MESSAGES_KEY) || '[]');
-      setMessages(localMsgs);
     };
 
     init();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
-  }, [messages]);
+
 
   // Realtime subscriptions
   useEffect(() => {
@@ -593,11 +573,52 @@ export default function App() {
         }
       }).subscribe();
 
+    const msgsSub = supabase.channel('msgs_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, payload => {
+        if (payload.eventType === 'INSERT') {
+          const m = payload.new;
+          setMessages(prev => {
+            if (prev.some(p => p.id === m.id)) return prev;
+            return [...prev, {
+              id: m.id, user: m.user_name, content: m.content, date: m.date, likes: m.likes
+            }];
+          });
+        } else if (payload.eventType === 'UPDATE') {
+          const m = payload.new;
+          setMessages(prev => prev.map(p => p.id === m.id ? {
+            id: m.id, user: m.user_name, content: m.content, date: m.date, likes: m.likes
+          } : p));
+        }
+      }).subscribe();
+
+    const profilesSub = supabase.channel('profiles_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const p = payload.new;
+            setProfiles(prev => {
+                const idx = prev.findIndex(pr => pr.role === p.role);
+                const newProfile = { role: p.role, pin: p.pin, layout_config: p.layout_config || DEFAULT_LAYOUT };
+                if (idx >= 0) {
+                    const newProfiles = [...prev];
+                    newProfiles[idx] = newProfile;
+                    return newProfiles;
+                }
+                return [...prev, newProfile];
+            });
+            // Update current user layout if changed
+            if (currentUser === p.role && p.layout_config) {
+                setLayout(p.layout_config);
+            }
+        }
+      }).subscribe();
+
     return () => {
       supabase.removeChannel(goalsSub);
       supabase.removeChannel(txsSub);
       supabase.removeChannel(achsSub);
       supabase.removeChannel(rewardsSub);
+      supabase.removeChannel(msgsSub);
+      supabase.removeChannel(profilesSub);
     };
   }, []);
 
@@ -999,21 +1020,46 @@ export default function App() {
     setEditingReward(null);
   };
 
-  const handleAddMessage = (content: string) => {
+  const handleAddMessage = async (content: string) => {
     if (!currentUser) return;
-    const newMsg: Message = {
+    const newMsg = {
       id: generateId(),
-      user: currentUser,
+      user_name: currentUser,
       content,
       date: new Date().toISOString(),
       likes: 0
     };
-    setMessages(prev => [newMsg, ...prev]);
-    showToast('留言已发布');
+    
+    // Optimistic update
+    setMessages(prev => [...prev, {
+        id: newMsg.id,
+        user: newMsg.user_name,
+        content: newMsg.content,
+        date: newMsg.date,
+        likes: newMsg.likes
+    }]);
+    
+    try {
+        await supabase.from('messages').insert(newMsg);
+        showToast('留言已发布');
+    } catch (e) {
+        console.error(e);
+        showToast('发送失败', 'error');
+    }
   };
 
-  const handleLikeMessage = (id: string) => {
+  const handleLikeMessage = async (id: string) => {
+    const msg = messages.find(m => m.id === id);
+    if (!msg) return;
+    
+    // Optimistic update
     setMessages(prev => prev.map(m => m.id === id ? { ...m, likes: m.likes + 1 } : m));
+    
+    try {
+        await supabase.from('messages').update({ likes: msg.likes + 1 }).eq('id', id);
+    } catch (e) {
+        console.error(e);
+    }
   };
 
   const leaderboard = useMemo(() => {
@@ -1049,6 +1095,53 @@ export default function App() {
       setAdminError('');
     } else {
       setAdminError('用户名或密码错误');
+    }
+  };
+
+  const handleLogin = async (role: string, pin: string) => {
+    // For admin, use hardcoded password for now
+    if (role === '管理员') {
+      if (pin === 'admin123') { // Simple admin password
+        setCurrentUser('管理员');
+        setIsAdmin(true);
+        return true;
+      }
+      return false;
+    }
+
+    // For family members, check profile pin
+    const profile = profiles.find(p => p.role === role);
+    if (profile && profile.pin === pin) {
+      setCurrentUser(role);
+      setIsAdmin(false);
+      // Load user layout
+      if (profile.layout_config) {
+        setLayout(profile.layout_config);
+      } else {
+        setLayout(DEFAULT_LAYOUT);
+      }
+      return true;
+    }
+    
+    // If no profile found (should not happen as we insert defaults), try default pin
+    if (!profile && pin === '1234') {
+       return true;
+    }
+
+    return false;
+  };
+
+  const handleSaveLayout = async (newLayout: LayoutConfig) => {
+    setLayout(newLayout);
+    if (currentUser && currentUser !== '管理员') {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ layout_config: newLayout })
+        .eq('role', currentUser);
+        
+      if (error) {
+        console.error('Error saving layout:', error);
+      }
     }
   };
 
@@ -1130,7 +1223,7 @@ export default function App() {
             {ROLES.map(role => (
               <button
                 key={role}
-                onClick={() => setCurrentUser(role)}
+                onClick={() => { setLoginRole(role); setIsLoginModalOpen(true); }}
                 className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
               >
                 {role}
@@ -1138,7 +1231,7 @@ export default function App() {
             ))}
           </div>
           <button
-            onClick={() => setShowAdminLogin(true)}
+            onClick={() => { setLoginRole('管理员'); setIsLoginModalOpen(true); }}
             className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
           >
             <Settings className="w-5 h-5" />
