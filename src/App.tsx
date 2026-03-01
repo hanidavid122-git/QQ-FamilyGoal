@@ -351,8 +351,14 @@ export default function App() {
   useEffect(() => {
     const migrateData = async () => {
       const isMigrated = localStorage.getItem('family_goals_migrated');
-      if (isMigrated === 'true') return;
+      
+      // Check if DB is actually empty to decide if we should re-migrate
+      const { count, error: countErr } = await supabase.from('goals').select('*', { count: 'exact', head: true });
+      const dbIsEmpty = !countErr && count === 0;
 
+      if (isMigrated === 'true' && !dbIsEmpty) return;
+
+      console.log('Starting data migration/sync...');
       try {
         const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         const localTxs = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
@@ -504,12 +510,18 @@ export default function App() {
             likes: m.likes
           })));
         }
-        if (profilesData) {
+        if (profilesData && profilesData.length > 0) {
             setProfiles(profilesData.map(p => ({
                 role: p.role,
                 pin: p.pin,
                 layout_config: p.layout_config || DEFAULT_LAYOUT
             })));
+        } else if (profilesData && profilesData.length === 0) {
+            // Table exists but is empty, try to initialize
+            console.log('Profiles table is empty, initializing default profiles...');
+            const initialProfiles = ROLES.map(role => ({ role, pin: '1183' }));
+            await supabase.from('profiles').insert(initialProfiles);
+            setProfiles(initialProfiles.map(p => ({ ...p, layout_config: DEFAULT_LAYOUT })));
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -1137,6 +1149,7 @@ export default function App() {
 
   const handleLogin = async (role: string, pin: string) => {
     console.log('Attempting login for role:', role, 'with pin:', pin);
+    console.log('Current profiles count:', profiles.length);
     // For admin, use hardcoded password for now
     if (role === '管理员') {
       if (pin === 'admin123') { // Simple admin password
@@ -1151,8 +1164,11 @@ export default function App() {
     // For family members, check profile pin
     const profile = profiles.find(p => p.role === role);
     if (profile) {
-      console.log('Found profile for role:', role, 'PIN matches:', profile.pin === pin);
-      if (profile.pin === pin) {
+      console.log(`Found profile for role: ${role}`);
+      console.log(`Comparing PINs: DB="${profile.pin}" (len: ${profile.pin?.length}) vs Input="${pin}" (len: ${pin?.length})`);
+      
+      if (profile.pin?.trim() === pin.trim()) {
+        console.log('Login successful');
         setCurrentUser(role);
         // Load user layout
         if (profile.layout_config) {
@@ -1203,44 +1219,64 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center"
         >
-          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Users className="w-8 h-8 text-orange-500" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">欢迎来到家庭目标</h1>
-          <p className="text-stone-500 mb-8">请选择您的角色。注意：角色选择后将无法更改。</p>
-          
-          {profilesTableMissing && (
-            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm flex items-start gap-3 text-left">
-              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold mb-1">数据库表缺失</p>
-                <p>检测到 `profiles` 表不存在。请在 Supabase 控制台运行 `supabase-schema.sql` 中的 SQL 语句。当前将使用默认 PIN 码 (1234) 登录。</p>
-              </div>
+          {loading ? (
+            <div className="py-12 flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
+              <p className="text-stone-500 font-medium">正在同步家庭数据...</p>
             </div>
-          )}
-          
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            {ROLES.map(role => (
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Users className="w-8 h-8 text-orange-500" />
+              </div>
+              <h1 className="text-2xl font-bold mb-2">欢迎来到家庭目标</h1>
+              <p className="text-stone-500 mb-8">请选择您的角色。注意：角色选择后将无法更改。</p>
+              
+              {profilesTableMissing && (
+                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm flex flex-col items-start gap-3 text-left">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold mb-1">数据库连接异常</p>
+                      <p>无法连接到 `profiles` 表。请确保已在 Supabase 运行 SQL 脚本。如果已运行，请尝试点击下方按钮重置本地缓存。</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      localStorage.removeItem('family_goals_migrated');
+                      window.location.reload();
+                    }}
+                    className="mt-2 px-4 py-2 bg-amber-200 hover:bg-amber-300 rounded-xl font-bold transition-colors text-amber-800"
+                  >
+                    重置并刷新
+                  </button>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {ROLES.map(role => (
+                  <button
+                    key={role}
+                    onClick={() => { 
+                      console.log('Role clicked:', role);
+                      setLoginRole(role); 
+                      setIsLoginModalOpen(true); 
+                    }}
+                    className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
+                  >
+                    {role}
+                  </button>
+                ))}
+              </div>
               <button
-                key={role}
-                onClick={() => { 
-                  console.log('Role clicked:', role);
-                  setLoginRole(role); 
-                  setIsLoginModalOpen(true); 
-                }}
-                className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
+                onClick={() => { setLoginRole('管理员'); setIsLoginModalOpen(true); }}
+                className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
               >
-                {role}
+                <Settings className="w-5 h-5" />
+                管理员 (可管理所有项目)
               </button>
-            ))}
-          </div>
-          <button
-            onClick={() => { setLoginRole('管理员'); setIsLoginModalOpen(true); }}
-            className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Settings className="w-5 h-5" />
-            管理员 (可管理所有项目)
-          </button>
+            </>
+          )}
         </motion.div>
 
         <AnimatePresence>
@@ -1531,19 +1567,16 @@ export default function App() {
             onUpdatePin={handleUpdateProfilePin}
           />
         )}
-        {isProfileModalOpen && (
-          <ProfileManagementModal
-            profiles={profiles}
-            onClose={() => setIsProfileModalOpen(false)}
-            onUpdatePin={handleUpdateProfilePin}
-          />
-        )}
         {isDataModalOpen && (
           <DataManagementModal
             onClose={() => setIsDataModalOpen(false)}
             onExport={handleExport}
             onImport={handleImport}
             onRecover={handleRecoverFromLocal}
+            onForceSync={() => {
+              localStorage.removeItem('family_goals_migrated');
+              window.location.reload();
+            }}
           />
         )}
         {isRewardModalOpen && (
@@ -1713,7 +1746,7 @@ function ProfileManagementModal({ profiles, onClose, onUpdatePin }: { profiles: 
   );
 }
 
-function DataManagementModal({ onClose, onExport, onImport, onRecover }: { onClose: () => void, onExport: () => void, onImport: (e: React.ChangeEvent<HTMLInputElement>) => void, onRecover: () => void }) {
+function DataManagementModal({ onClose, onExport, onImport, onRecover, onForceSync }: { onClose: () => void, onExport: () => void, onImport: (e: React.ChangeEvent<HTMLInputElement>) => void, onRecover: () => void, onForceSync: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -1726,6 +1759,11 @@ function DataManagementModal({ onClose, onExport, onImport, onRecover }: { onClo
         </p>
         
         <div className="space-y-4">
+          <button onClick={onForceSync} className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 py-3 rounded-xl font-medium transition-colors cursor-pointer border border-amber-200">
+            <TrendingUp className="w-5 h-5" />
+            强制同步 (解决数据丢失)
+          </button>
+
           <button onClick={onRecover} className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 py-3 rounded-xl font-medium transition-colors cursor-pointer border border-blue-200">
             <History className="w-5 h-5" />
             从本地缓存恢复

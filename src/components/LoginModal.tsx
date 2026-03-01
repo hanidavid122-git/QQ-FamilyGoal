@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Lock, User, X } from 'lucide-react';
+import { Lock, User, X, Eye, EyeOff } from 'lucide-react';
 import { ALL_ROLES } from '../constants';
 
 interface LoginModalProps {
@@ -17,6 +17,8 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [showPin, setShowPin] = useState(false);
+
   // Reset state when modal opens or initialRole changes
   React.useEffect(() => {
     console.log('LoginModal useEffect - isOpen:', isOpen, 'initialRole:', initialRole);
@@ -24,32 +26,43 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
       setSelectedRole(initialRole || null);
       setPin('');
       setError('');
+      setShowPin(false);
     }
   }, [isOpen, initialRole]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedRole || !pin) return;
-
-    setLoading(true);
+  const handlePinChange = async (newPin: string) => {
+    setPin(newPin);
     setError('');
     
-    try {
-      const success = await onLogin(selectedRole, pin);
-      if (success) {
-        onClose();
-        setPin('');
-        setSelectedRole(null);
-      } else {
-        setError('PIN码错误，请重试');
-        setPin('');
+    if (newPin.length === 4 && selectedRole) {
+      setLoading(true);
+      try {
+        const success = await onLogin(selectedRole, newPin);
+        if (success) {
+          onClose();
+          setPin('');
+          setSelectedRole(null);
+        } else {
+          setError('PIN码错误，请重试');
+          setPin('');
+        }
+      } catch (err) {
+        setError('登录失败，请重试');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setError('登录失败，请重试');
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRole || !pin || pin.length < 4) return;
+    // Manual submit logic (already handled by handlePinChange for 4 digits, 
+    // but kept for accessibility/enter key)
+    if (!loading) {
+      handlePinChange(pin);
     }
   };
 
@@ -109,12 +122,22 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-stone-700 mb-2">输入PIN码</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-sm font-medium text-stone-700">输入PIN码</label>
+                  <button 
+                    type="button"
+                    onClick={() => setShowPin(!showPin)}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                  >
+                    {showPin ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    {showPin ? '隐藏' : '显示'}
+                  </button>
+                </div>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showPin ? "text" : "password"}
                     value={pin}
-                    onChange={(e) => setPin(e.target.value)}
+                    onChange={(e) => handlePinChange(e.target.value)}
                     maxLength={4}
                     className="w-full text-center text-3xl tracking-[1em] font-bold py-4 rounded-xl border-2 border-stone-200 focus:border-indigo-500 focus:ring-0 outline-none transition-all"
                     placeholder="••••"
