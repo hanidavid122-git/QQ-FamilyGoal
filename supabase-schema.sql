@@ -75,7 +75,7 @@ create table public.messages (
   content text not null,
   date timestamptz not null default now(),
   likes integer not null default 0,
-  avatar text,
+  avatar text, -- Stores JSON string for danmaku effects (speed, effect, duration)
   color text,
   font_size text,
   created_at timestamptz not null default now()
