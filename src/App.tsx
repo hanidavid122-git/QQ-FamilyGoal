@@ -43,11 +43,6 @@ type Achievement = {
   date: string;
 };
 
-type CheckIn = {
-  member: string;
-  date: string;
-};
-
 type Reward = {
   id: string;
   name: string;
@@ -208,7 +203,6 @@ export default function App() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [achs, setAchs] = useState<Achievement[]>([]);
-  const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [rewards, setRewards] = useState<Reward[]>(DEFAULT_REWARDS);
   const [loading, setLoading] = useState(true);
 
@@ -222,7 +216,6 @@ export default function App() {
         const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         const localTxs = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
         const localAchs = JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
-        const localCheckIns = JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
         const localRewards = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null');
 
         if (localGoals.length > 0) {
@@ -276,17 +269,20 @@ export default function App() {
           { data: goalsData },
           { data: txsData },
           { data: achsData },
-          { data: checkInsData },
           { data: rewardsData }
         ] = await Promise.all([
           supabase.from('goals').select('*'),
           supabase.from('transactions').select('*'),
           supabase.from('achievements').select('*'),
-          supabase.from('checkins').select('*'),
           supabase.from('rewards').select('*')
         ]);
 
         if (goalsData) {
+          const goalsToUpdate = goalsData.filter(g => g.progress === 100 && !g.completed_at);
+          if (goalsToUpdate.length > 0) {
+            await Promise.all(goalsToUpdate.map(g => supabase.from('goals').update({ progress: 99 }).eq('id', g.id)));
+            goalsToUpdate.forEach(g => g.progress = 99);
+          }
           setGoals(goalsData.map(g => ({
             id: g.id,
             name: g.name,
@@ -312,7 +308,6 @@ export default function App() {
             date: a.date
           })));
         }
-        if (checkInsData) setCheckIns(checkInsData);
         if (rewardsData && rewardsData.length > 0) {
           setRewards(rewardsData.map(r => ({
             id: r.id,
@@ -385,14 +380,6 @@ export default function App() {
         });
       }).subscribe();
 
-    const checkInsSub = supabase.channel('checkins_changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, payload => {
-        setCheckIns(prev => {
-          if (prev.some(p => p.member === payload.new.member && p.date === payload.new.date)) return prev;
-          return [...prev, payload.new as CheckIn];
-        });
-      }).subscribe();
-
     const rewardsSub = supabase.channel('rewards_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rewards' }, payload => {
         if (payload.eventType === 'INSERT') {
@@ -419,7 +406,6 @@ export default function App() {
       supabase.removeChannel(goalsSub);
       supabase.removeChannel(txsSub);
       supabase.removeChannel(achsSub);
-      supabase.removeChannel(checkInsSub);
       supabase.removeChannel(rewardsSub);
     };
   }, []);
@@ -520,41 +506,26 @@ export default function App() {
     }
   }, [goals, memberStats]); // Removed txs and achs from dependencies to prevent infinite loop
 
-  const handleCheckIn = async (role: string) => {
-    try {
-      const today = getLocalDateString(new Date());
-      if (!checkIns.some(c => c.member === role && c.date === today)) {
-        const newCheckIn = { id: generateId(), member: role, date: today };
-        const newTx = { 
-          id: generateId(),
-          member: role, 
-          amount: 1, 
-          reason: '每日签到', 
-          type: 'earned' 
-        };
-        
-        await Promise.all([
-          supabase.from('checkins').insert(newCheckIn),
-          supabase.from('transactions').insert(newTx)
-        ]);
-        showToast('签到成功！积分 +1');
-      }
-    } catch (e) {
-      console.error(e);
-      showToast('签到失败，请重试', 'error');
-    }
-  };
-
   const handleAddProgress = async (id: string) => {
     try {
       const goal = goals.find(g => g.id === id);
       if (!goal) return;
-      const newProg = Math.min(goal.progress + 10, 100);
+      const newProg = Math.min(goal.progress + 10, 99);
       await supabase.from('goals').update({ progress: newProg }).eq('id', id);
       showToast('进度已更新');
     } catch (e) {
       console.error(e);
       showToast('更新失败，请重试', 'error');
+    }
+  };
+
+  const handleMarkAsDone = async (id: string) => {
+    try {
+      await supabase.from('goals').update({ progress: 99 }).eq('id', id);
+      showToast('已标记为完成，等待全家确认');
+    } catch (e) {
+      console.error(e);
+      showToast('操作失败', 'error');
     }
   };
 
@@ -675,7 +646,6 @@ export default function App() {
       goals,
       txs,
       achs,
-      checkIns,
       rewards
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -715,7 +685,6 @@ export default function App() {
           setGoals(importedGoals);
           setTxs(data.txs || []);
           setAchs(data.achs || []);
-          setCheckIns(data.checkIns || []);
           setRewards(importedRewards);
           setIsDataModalOpen(false);
           alert('数据导入成功！');
@@ -898,8 +867,8 @@ export default function App() {
           <div className="flex items-center gap-2 text-orange-600">
             <Heart className="w-6 h-6 fill-current" />
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              家庭目标
-              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v1.1.0</span>
+              多盈家庭目标
+              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v1.1.1</span>
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -921,22 +890,6 @@ export default function App() {
                 <Database className="w-5 h-5" />
               </button>
             )}
-            <div className="flex bg-stone-100 rounded-full p-1">
-              {ROLES.map(r => {
-                const checked = checkIns.some(c => c.member === r && c.date === new Date().toISOString().split('T')[0]);
-                return (
-                  <button 
-                    key={r} 
-                    onClick={() => handleCheckIn(r)} 
-                    disabled={checked} 
-                    title={checked ? '已签到' : '点击签到 (+1分)'}
-                    className={`w-8 h-8 rounded-full text-xs font-bold transition-colors cursor-pointer ${checked ? 'bg-emerald-500 text-white' : 'bg-white text-stone-500 hover:text-orange-500 shadow-sm'}`}
-                  >
-                    {r[0]}
-                  </button>
-                );
-              })}
-            </div>
             <button 
               onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
               className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-sm transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
@@ -959,7 +912,6 @@ export default function App() {
             <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
               <p className="font-bold text-stone-800 mb-1">🎯 基础奖励</p>
               <p>完成目标: <span className="text-emerald-600 font-bold">+10分</span></p>
-              <p>每日签到: <span className="text-emerald-600 font-bold">+1分</span></p>
             </div>
             <div className="bg-stone-50 p-3 rounded-xl border border-stone-100">
               <p className="font-bold text-stone-800 mb-1">⚡ 额外加分</p>
@@ -979,9 +931,19 @@ export default function App() {
 
         {/* Family Total Points */}
         <div className="bg-gradient-to-r from-orange-500 to-pink-500 rounded-2xl p-6 text-white shadow-md flex flex-col md:flex-row items-center justify-between gap-6">
-          <div>
-            <p className="text-orange-100 font-medium mb-1">家庭总积分</p>
-            <p className="text-4xl font-bold flex items-center gap-2"><Star className="w-8 h-8 text-yellow-300 fill-current" /> {familyPts}</p>
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="text-orange-100 font-medium mb-1">家庭总积分</p>
+              <p className="text-4xl font-bold flex items-center gap-2"><Star className="w-8 h-8 text-yellow-300 fill-current" /> {familyPts}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {memberStats.map(stat => (
+                <div key={stat.role} className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-lg text-sm">
+                  <span className="text-orange-50">{stat.role}:</span>
+                  <span className="font-bold">{stat.pts}</span>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="flex-grow w-full max-w-md bg-white/20 p-4 rounded-xl">
             <p className="text-sm font-medium mb-2 flex justify-between">
@@ -992,6 +954,58 @@ export default function App() {
               <div className="h-full bg-yellow-300 rounded-full" style={{ width: `${Math.min(100, (familyPts/500)*100)}%` }}></div>
             </div>
           </div>
+        </div>
+
+        {/* Filters & Goals Grid */}
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
+              <Target className="w-6 h-6 text-orange-500" />
+              任务列表
+            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              {(['全部', '进行中', '已完成'] as FilterType[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+                    filter === f 
+                      ? 'bg-stone-800 text-white' 
+                      : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredGoals.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-stone-100 shadow-sm">
+              <Target className="w-12 h-12 text-stone-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-stone-900 mb-1">未找到目标</h3>
+              <p className="text-stone-500">
+                {filter === '全部' ? "开始创建一个新的家庭目标吧！" : `当前没有${filter}的目标。`}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <AnimatePresence mode="popLayout">
+                {filteredGoals.map(goal => (
+                  <GoalCard 
+                    key={goal.id} 
+                    goal={goal} 
+                    currentUser={currentUser}
+                    onAddProgress={() => handleAddProgress(goal.id)}
+                    onMarkAsDone={() => handleMarkAsDone(goal.id)}
+                    onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
+                    onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
+                    onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1124,9 +1138,11 @@ export default function App() {
                   <Gift className="w-5 h-5 text-pink-500" /> 积分兑换
                 </h2>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => setIsRewardModalOpen(true)} className="text-sm text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1 cursor-pointer">
-                    <Settings className="w-4 h-4" /> 管理奖励
-                  </button>
+                  {currentUser === '管理员' && (
+                    <button onClick={() => setIsRewardModalOpen(true)} className="text-sm text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1 cursor-pointer">
+                      <Settings className="w-4 h-4" /> 管理奖励
+                    </button>
+                  )}
                   <select 
                     value={rewardMember} 
                     onChange={e => setRewardMember(e.target.value)} 
@@ -1170,49 +1186,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-4">
-          {(['全部', '进行中', '已完成'] as FilterType[]).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
-                filter === f 
-                  ? 'bg-stone-800 text-white' 
-                  : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-
-        {/* Goals Grid */}
-        {filteredGoals.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl border border-stone-100 shadow-sm">
-            <Target className="w-12 h-12 text-stone-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-stone-900 mb-1">未找到目标</h3>
-            <p className="text-stone-500">
-              {filter === '全部' ? "开始创建一个新的家庭目标吧！" : `当前没有${filter}的目标。`}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <AnimatePresence mode="popLayout">
-              {filteredGoals.map(goal => (
-                <GoalCard 
-                  key={goal.id} 
-                  goal={goal} 
-                  currentUser={currentUser}
-                  onAddProgress={() => handleAddProgress(goal.id)}
-                  onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
-                  onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
-                  onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
       </main>
 
       {/* Modals */}
@@ -1431,9 +1404,9 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
   );
 }
 
-function GoalCard({ goal, currentUser, onAddProgress, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, onAddProgress: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
+function GoalCard({ goal, currentUser, onAddProgress, onMarkAsDone, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, onAddProgress: () => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
   const isCompleted = goal.progress >= 100 && goal.completedAt !== undefined;
-  const isPendingConfirmation = goal.progress >= 100 && !goal.completedAt;
+  const isPendingConfirmation = goal.progress >= 99 && !goal.completedAt;
   
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -1552,15 +1525,23 @@ function GoalCard({ goal, currentUser, onAddProgress, onConfirm, onEdit, onDelet
       
       {!isCompleted && (
         <div className="px-6 py-4 bg-stone-50 border-t border-stone-100 flex flex-col gap-2">
-          {goal.progress < 100 && canAddProgress && (
-            <button 
-              onClick={onAddProgress}
-              className="w-full py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" /> 增加 10% 进度
-            </button>
+          {goal.progress < 99 && canAddProgress && (
+            <div className="grid grid-cols-2 gap-2">
+              <button 
+                onClick={onAddProgress}
+                className="py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> 进度+10%
+              </button>
+              <button 
+                onClick={onMarkAsDone}
+                className="py-2 bg-orange-500 text-white hover:bg-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" /> 确认完成
+              </button>
+            </div>
           )}
-          {goal.progress >= 100 && !isCompleted && (
+          {goal.progress >= 99 && !isCompleted && (
             <div className="flex flex-wrap gap-2">
               {ROLES.map(r => {
                 if (confirmations[r]) return null;
@@ -1607,12 +1588,13 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const finalProgress = progress === 100 && (!goal || !goal.completedAt) ? 99 : progress;
     onSave({
       name,
       description,
       startDate,
       endDate,
-      progress,
+      progress: finalProgress,
       creator,
       assignees: assignees.length > 0 ? assignees : ['爸爸'],
       assignee: assignees[0] || '爸爸', // fallback for old data
