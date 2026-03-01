@@ -55,4 +55,16 @@ export type Profile = {
   role: string;
   pin: string;
   layout_config: LayoutConfig;
+  avatar_url?: string;
+};
+
+export type Message = {
+  id: string;
+  user: string;
+  content: string;
+  date: string;
+  likes: number;
+  avatar?: string;
+  color?: string;
+  font_size?: string;
 };

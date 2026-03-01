@@ -42,3 +42,17 @@ export const DEFAULT_REWARDS: Reward[] = [
   { id: 'r4', name: '获得新玩具', cost: 150, isActive: true, isCustom: false, iconName: 'Gamepad' },
   { id: 'r5', name: '选择周末大餐', cost: 250, isActive: true, isCustom: false, iconName: 'Utensils' },
 ];
+
+export const AVATARS = [
+  '👨🏻', '👨🏼', '👨🏽', '👨🏾', '👨🏿',
+  '👩🏻', '👩🏼', '👩🏽', '👩🏾', '👩🏿',
+  '👧🏻', '👧🏼', '👧🏽', '👧🏾', '👧🏿',
+  '👦🏻', '👦🏼', '👦🏽', '👦🏾', '👦🏿',
+  '👶🏻', '👶🏼', '👶🏽', '👶🏾', '👶🏿',
+  '👴🏻', '👵🏻', '🧔🏻', '👱🏻‍♀️', '👱🏻',
+  '🐱', '🐶', '🦊', '🐻', '🐼', '🦁', '🐯', '🐮', '🐷', '🐸'
+];
+
+export const MESSAGE_COLORS = [
+  '#000000', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'
+];

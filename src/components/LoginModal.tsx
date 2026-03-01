@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lock, User, X, Eye, EyeOff } from 'lucide-react';
 import { ALL_ROLES } from '../constants';
+import { Profile } from '../types';
+import { UserAvatar } from './UserAvatar';
 
 interface LoginModalProps {
   isOpen: boolean;
   initialRole?: string | null;
+  profiles: Profile[];
   onLogin: (role: string, pin: string) => Promise<boolean>;
   onClose: () => void;
 }
 
-export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModalProps) {
+export function LoginModal({ isOpen, initialRole, profiles, onLogin, onClose }: LoginModalProps) {
   console.log('LoginModal rendered - isOpen:', isOpen, 'initialRole:', initialRole);
   const [selectedRole, setSelectedRole] = useState<string | null>(initialRole || null);
   const [pin, setPin] = useState('');
@@ -36,7 +39,8 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
     setPin(newPin);
     setError('');
     
-    if (newPin.length === 4 && selectedRole) {
+    // For normal roles, auto-submit on 4 digits
+    if (selectedRole !== '管理员' && newPin.length === 4) {
       setLoading(true);
       try {
         const success = await onLogin(selectedRole, newPin);
@@ -58,11 +62,25 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRole || !pin || pin.length < 4) return;
-    // Manual submit logic (already handled by handlePinChange for 4 digits, 
-    // but kept for accessibility/enter key)
-    if (!loading) {
-      handlePinChange(pin);
+    if (!selectedRole || !pin) return;
+    
+    // For Admin, we need manual submit because password length varies
+    if (selectedRole === '管理员' || pin.length === 4) {
+      setLoading(true);
+      try {
+        const success = await onLogin(selectedRole, pin);
+        if (success) {
+          onClose();
+          setPin('');
+          setSelectedRole(null);
+        } else {
+          setError(selectedRole === '管理员' ? '密码错误' : 'PIN码错误');
+        }
+      } catch (err) {
+        setError('登录失败，请重试');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -85,7 +103,7 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
               <Lock className="w-8 h-8" />
             </div>
             <h2 className="text-2xl font-bold text-stone-900">欢迎回家</h2>
-            <p className="text-stone-500 mt-2">请选择您的角色并输入PIN码</p>
+            <p className="text-stone-500 mt-2">请选择您的角色并输入{selectedRole === '管理员' ? '密码' : 'PIN码'}</p>
           </div>
 
           {!selectedRole ? (
@@ -96,9 +114,7 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
                   onClick={() => setSelectedRole(role)}
                   className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-stone-100 hover:border-indigo-500 hover:bg-indigo-50 transition-all group"
                 >
-                  <div className="w-12 h-12 bg-stone-100 rounded-full flex items-center justify-center text-2xl mb-2 group-hover:bg-white">
-                    {role === '爸爸' ? '👨🏻' : role === '妈妈' ? '👩🏻' : role === '姐姐' ? '👧🏻' : role === '妹妹' ? '👶🏻' : '🛡️'}
-                  </div>
+                  <UserAvatar role={role} profiles={profiles} className="w-12 h-12 text-2xl mb-2 group-hover:bg-white" />
                   <span className="font-bold text-stone-700 group-hover:text-indigo-700">{role}</span>
                 </button>
               ))}
@@ -107,9 +123,7 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="flex items-center justify-between bg-stone-50 p-4 rounded-xl">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-sm">
-                    {selectedRole === '爸爸' ? '👨🏻' : selectedRole === '妈妈' ? '👩🏻' : selectedRole === '姐姐' ? '👧🏻' : selectedRole === '妹妹' ? '👶🏻' : '🛡️'}
-                  </div>
+                  <UserAvatar role={selectedRole} profiles={profiles} className="w-10 h-10 text-xl shadow-sm" />
                   <span className="font-bold text-stone-900">{selectedRole}</span>
                 </div>
                 <button 
@@ -123,7 +137,7 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
 
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-stone-700">输入PIN码</label>
+                  <label className="text-sm font-medium text-stone-700">输入{selectedRole === '管理员' ? '密码' : 'PIN码'}</label>
                   <button 
                     type="button"
                     onClick={() => setShowPin(!showPin)}
@@ -138,9 +152,9 @@ export function LoginModal({ isOpen, initialRole, onLogin, onClose }: LoginModal
                     type={showPin ? "text" : "password"}
                     value={pin}
                     onChange={(e) => handlePinChange(e.target.value)}
-                    maxLength={4}
-                    className="w-full text-center text-3xl tracking-[1em] font-bold py-4 rounded-xl border-2 border-stone-200 focus:border-indigo-500 focus:ring-0 outline-none transition-all"
-                    placeholder="••••"
+                    maxLength={selectedRole === '管理员' ? 20 : 4}
+                    className={`w-full text-center ${selectedRole === '管理员' ? 'text-xl tracking-normal' : 'text-3xl tracking-[1em]'} font-bold py-4 rounded-xl border-2 border-stone-200 focus:border-indigo-500 focus:ring-0 outline-none transition-all`}
+                    placeholder={selectedRole === '管理员' ? "请输入密码" : "••••"}
                     autoFocus
                   />
                 </div>

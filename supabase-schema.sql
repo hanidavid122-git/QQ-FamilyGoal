@@ -75,6 +75,9 @@ create table public.messages (
   content text not null,
   date timestamptz not null default now(),
   likes integer not null default 0,
+  avatar text,
+  color text,
+  font_size text,
   created_at timestamptz not null default now()
 );
 
@@ -82,6 +85,7 @@ create table public.profiles (
   role text primary key,
   pin text not null default '1183',
   layout_config jsonb,
+  avatar_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -6,19 +6,20 @@ import {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Camera
 } from 'lucide-react';
 
 import { 
   Priority, Goal, Transaction, Achievement, Reward, FilterType, 
-  LayoutComponentId, LayoutConfig, Profile 
+  LayoutComponentId, LayoutConfig, Profile, Message
 } from './types';
 import { 
   ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
-  DEFAULT_REWARDS, ICONS 
+  DEFAULT_REWARDS, ICONS, AVATARS, MESSAGE_COLORS
 } from './constants';
 import { LoginModal } from './components/LoginModal';
 import { LayoutSettingsModal } from './components/LayoutSettingsModal';
+import { UserAvatar } from './components/UserAvatar';
 
 const STORAGE_KEY = 'family_goals_data';
 const TX_KEY = 'family_goals_txs';
@@ -107,14 +108,6 @@ function LineChart({ data }: { data: number[] }) {
   );
 }
 
-type Message = {
-  id: string;
-  user: string;
-  content: string;
-  date: string;
-  likes: number;
-};
-
 const MESSAGES_KEY = 'family_goals_messages';
 
 function FamilyHero({ familyPts }: { familyPts: number }) {
@@ -145,7 +138,7 @@ function FamilyHero({ familyPts }: { familyPts: number }) {
   );
 }
 
-function RaceChart({ memberStats }: { memberStats: any[] }) {
+function RaceChart({ memberStats, profiles }: { memberStats: any[], profiles: Profile[] }) {
   const maxPoints = Math.max(...memberStats.map(s => s.earned), 100);
   return (
     <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-stone-100 mb-8 relative overflow-hidden">
@@ -190,10 +183,14 @@ function RaceChart({ memberStats }: { memberStats: any[] }) {
                   transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
                   className="absolute mb-2 flex flex-col items-center z-10"
                 >
-                  <div className={`relative w-12 h-12 rounded-full border-4 shadow-lg flex items-center justify-center text-2xl bg-white transition-transform group-hover:scale-110 ${isLeader ? 'border-yellow-400 scale-110' : 'border-white'}`}>
-                    {member.role === '爸爸' ? '👨🏻' : member.role === '妈妈' ? '👩🏻' : member.role === '姐姐' ? '👧🏻' : '👶🏻'}
+                  <div className={`relative transition-transform group-hover:scale-110 ${isLeader ? 'scale-110' : ''}`}>
+                    <UserAvatar 
+                      role={member.role} 
+                      profiles={profiles} 
+                      className={`w-12 h-12 text-2xl border-4 ${isLeader ? 'border-yellow-400' : 'border-white'}`} 
+                    />
                     {isLeader && (
-                      <div className="absolute -top-4 text-2xl animate-bounce">👑</div>
+                      <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-2xl animate-bounce">👑</div>
                     )}
                   </div>
                   <div className="mt-2 bg-stone-800 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-md">
@@ -214,12 +211,16 @@ function RaceChart({ memberStats }: { memberStats: any[] }) {
   );
 }
 
-function DanmakuBoard({ messages, onSend }: { messages: Message[], onSend: (content: string) => void }) {
+function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: Message[], onSend: (content: string, avatar?: string, color?: string, fontSize?: string) => void, currentUser: string | null, profiles: Profile[] }) {
   const [input, setInput] = useState('');
+  const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
+  const [selectedColor, setSelectedColor] = useState(MESSAGE_COLORS[0]);
+  const [selectedFontSize, setSelectedFontSize] = useState('0.9rem');
+  const [showPicker, setShowPicker] = useState(false);
   
   return (
     <div className="mb-8">
-      <div className="bg-stone-900 rounded-[2rem] p-1 shadow-lg overflow-hidden relative h-40 mb-4">
+      <div className="bg-stone-900 rounded-[2rem] p-1 shadow-lg overflow-hidden relative h-48 mb-4">
         {/* Background Grid */}
         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
         
@@ -239,11 +240,14 @@ function DanmakuBoard({ messages, onSend }: { messages: Message[], onSend: (cont
                 className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white shadow-sm"
                 style={{ 
                   top: `${(i % 5) * 18 + 10}%`,
-                  fontSize: `${Math.random() > 0.8 ? '1.1rem' : '0.9rem'}`
+                  fontSize: msg.font_size || '0.9rem',
+                  color: msg.color || '#ffffff'
                 }}
               >
+                <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
+                {msg.avatar && <span className="text-lg">{msg.avatar}</span>}
                 <span className="font-bold text-yellow-400 text-xs">{msg.user}:</span>
-                <span>{msg.content}</span>
+                <span style={{ color: msg.color }}>{msg.content}</span>
                 {msg.likes > 0 && <span className="text-xs text-pink-400 flex items-center">❤️ {msg.likes}</span>}
               </motion.div>
             ))}
@@ -260,31 +264,99 @@ function DanmakuBoard({ messages, onSend }: { messages: Message[], onSend: (cont
         onSubmit={(e) => { 
           e.preventDefault(); 
           if(input.trim()) { 
-            onSend(input); 
+            onSend(input, selectedAvatar, selectedColor, selectedFontSize); 
             setInput(''); 
           } 
         }}
-        className="flex gap-2"
+        className="space-y-3"
       >
-        <div className="relative flex-grow">
-          <input 
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="发送弹幕留言..."
-            className="w-full pl-5 pr-12 py-3 bg-white border border-stone-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all"
-          />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-stone-100 flex items-center justify-center text-stone-400">
-            <FileText className="w-4 h-4" />
+        <div className="flex gap-2">
+          <div className="relative flex-grow">
+            <input 
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="发送弹幕留言..."
+              className="w-full pl-5 pr-12 py-3 bg-white border border-stone-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all"
+            />
+            <button 
+              type="button"
+              onClick={() => setShowPicker(!showPicker)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-stone-100 flex items-center justify-center text-stone-400 hover:text-indigo-500 transition-colors"
+            >
+              <Heart className={`w-4 h-4 ${showPicker ? 'fill-indigo-500 text-indigo-500' : ''}`} />
+            </button>
           </div>
+          <button 
+            type="submit" 
+            disabled={!input.trim() || !currentUser}
+            className="px-6 py-3 bg-indigo-500 text-white rounded-2xl font-bold shadow-md hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4 rotate-90" />
+            发送
+          </button>
         </div>
-        <button 
-          type="submit" 
-          disabled={!input.trim()}
-          className="px-6 py-3 bg-indigo-500 text-white rounded-2xl font-bold shadow-md hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          <Upload className="w-4 h-4 rotate-90" />
-          发送
-        </button>
+
+        <AnimatePresence>
+          {showPicker && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">选择表情</div>
+                    <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto p-1 no-scrollbar">
+                      {AVATARS.map(a => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => setSelectedAvatar(a)}
+                          className={`text-xl p-1 rounded-lg transition-all ${selectedAvatar === a ? 'bg-indigo-100 scale-110' : 'hover:bg-stone-100'}`}
+                        >
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">选择颜色</div>
+                      <div className="flex flex-wrap gap-2">
+                        {MESSAGE_COLORS.map(c => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setSelectedColor(c)}
+                            className={`w-6 h-6 rounded-full border-2 transition-all ${selectedColor === c ? 'border-indigo-500 scale-110' : 'border-transparent'}`}
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">字体大小</div>
+                      <div className="flex gap-2">
+                        {['0.8rem', '0.9rem', '1.1rem', '1.3rem'].map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setSelectedFontSize(s)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${selectedFontSize === s ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                          >
+                            {s === '0.8rem' ? '小' : s === '0.9rem' ? '中' : s === '1.1rem' ? '大' : '特大'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </form>
     </div>
   );
@@ -345,6 +417,7 @@ export default function App() {
   const [loginRole, setLoginRole] = useState<string | null>(null);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [profilesTableMissing, setProfilesTableMissing] = useState(false);
 
   // Load initial data
@@ -507,21 +580,25 @@ export default function App() {
             user: m.user_name,
             content: m.content,
             date: m.date,
-            likes: m.likes
+            likes: m.likes,
+            avatar: m.avatar,
+            color: m.color,
+            font_size: m.font_size
           })));
         }
         if (profilesData && profilesData.length > 0) {
             setProfiles(profilesData.map(p => ({
                 role: p.role,
                 pin: p.pin,
-                layout_config: p.layout_config || DEFAULT_LAYOUT
+                layout_config: p.layout_config || DEFAULT_LAYOUT,
+                avatar_url: p.avatar_url
             })));
         } else if (profilesData && profilesData.length === 0) {
             // Table exists but is empty, try to initialize
             console.log('Profiles table is empty, initializing default profiles...');
             const initialProfiles = ROLES.map(role => ({ role, pin: '1183' }));
             await supabase.from('profiles').insert(initialProfiles);
-            setProfiles(initialProfiles.map(p => ({ ...p, layout_config: DEFAULT_LAYOUT })));
+            setProfiles(initialProfiles.map(p => ({ ...p, layout_config: DEFAULT_LAYOUT, avatar_url: null })));
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -1055,14 +1132,17 @@ export default function App() {
     setEditingReward(null);
   };
 
-  const handleAddMessage = async (content: string) => {
+  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string) => {
     if (!currentUser) return;
     const newMsg = {
       id: generateId(),
       user_name: currentUser,
       content,
       date: new Date().toISOString(),
-      likes: 0
+      likes: 0,
+      avatar,
+      color,
+      font_size: fontSize
     };
     
     // Optimistic update
@@ -1071,7 +1151,10 @@ export default function App() {
         user: newMsg.user_name,
         content: newMsg.content,
         date: newMsg.date,
-        likes: newMsg.likes
+        likes: newMsg.likes,
+        avatar: newMsg.avatar,
+        color: newMsg.color,
+        font_size: newMsg.font_size
     }]);
     
     try {
@@ -1108,6 +1191,31 @@ export default function App() {
       showToast('更新PIN码失败', 'error');
     } else {
       showToast(`${role} 的PIN码已更新`);
+    }
+  };
+
+  const handleUpdateAvatar = async (role: string, avatarUrl: string) => {
+    try {
+      // 尝试使用 upsert 更新或插入
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ role, avatar_url: avatarUrl }, { onConflict: 'role' });
+      
+      if (error) {
+        console.error('Supabase error details:', error);
+        throw new Error(error.message || '数据库写入失败');
+      }
+      
+      // 成功后更新本地状态
+      setProfiles(prev => prev.map(p => p.role === role ? { ...p, avatar_url: avatarUrl } : p));
+      
+      showToast('头像已更新');
+      setIsSettingsModalOpen(false);
+    } catch (err: any) {
+      console.error('Full error object:', err);
+      // 显示具体的错误原因，方便排查
+      const errorMsg = err.message || '未知错误';
+      showToast(`更新失败: ${errorMsg}`, 'error');
     }
   };
 
@@ -1284,6 +1392,7 @@ export default function App() {
             <LoginModal
               isOpen={isLoginModalOpen}
               initialRole={loginRole}
+              profiles={profiles}
               onLogin={handleLogin}
               onClose={() => setIsLoginModalOpen(false)}
             />
@@ -1305,12 +1414,20 @@ export default function App() {
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-stone-600 bg-stone-100 px-3 py-1 rounded-full hidden sm:inline-block">
-              当前角色: {currentUser}
-            </span>
+            {currentUser && (
+              <button 
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="group relative flex items-center gap-2 bg-stone-50 hover:bg-stone-100 p-1 pr-3 rounded-full border border-stone-200 transition-all cursor-pointer"
+                title="个人设置"
+              >
+                <UserAvatar role={currentUser} profiles={profiles} className="w-8 h-8" />
+                <span className="text-sm font-bold text-stone-700">{currentUser}</span>
+                <Settings className="w-3.5 h-3.5 text-stone-400 group-hover:text-indigo-500 transition-colors" />
+              </button>
+            )}
             <button 
               onClick={handleLogout}
-              className="text-xs font-medium text-stone-500 hover:text-red-500 underline cursor-pointer"
+              className="text-xs font-medium text-stone-400 hover:text-red-500 transition-colors cursor-pointer"
             >
               退出
             </button>
@@ -1349,25 +1466,23 @@ export default function App() {
           <FamilyHero familyPts={familyPts} />
 
           {/* 2. Danmaku Board */}
-          <DanmakuBoard messages={messages} onSend={handleAddMessage} />
+          <DanmakuBoard messages={messages} onSend={handleAddMessage} currentUser={currentUser} profiles={profiles} />
 
           {/* 3. Race Chart (Mountain) */}
-          <RaceChart memberStats={memberStats} />
+          <RaceChart memberStats={memberStats} profiles={profiles} />
 
           {/* 4. Personal Dashboard (If logged in) */}
           {currentUser && (
             <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[2rem] p-6 text-white shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl border-2 border-white/30">
-                    {currentUser === '爸爸' ? '👨🏻' : currentUser === '妈妈' ? '👩🏻' : currentUser === '姐姐' ? '👧🏻' : '👶🏻'}
-                  </div>
+                  <UserAvatar role={currentUser} profiles={profiles} className="w-12 h-12 text-2xl border-2 border-white/30" />
                   <div>
                     <h3 className="font-bold text-lg">我的概览</h3>
                     <p className="text-white/80 text-xs">加油，{currentUser}！</p>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right flex flex-col items-end">
                   <div className="text-3xl font-black">{memberStats.find(m => m.role === currentUser)?.pts || 0}</div>
                   <div className="text-xs text-white/60">当前积分</div>
                 </div>
@@ -1437,6 +1552,7 @@ export default function App() {
                       key={goal.id} 
                       goal={goal} 
                       currentUser={currentUser}
+                      profiles={profiles}
                       onAddProgress={() => handleAddProgress(goal.id)}
                       onMarkAsDone={() => handleMarkAsDone(goal.id)}
                       onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
@@ -1456,12 +1572,14 @@ export default function App() {
                 <Gift className="w-7 h-7 text-pink-500" />
                 积分兑换
               </h2>
-              <button 
-                onClick={() => setIsRewardModalOpen(true)}
-                className="text-stone-400 hover:text-stone-600 p-2 hover:bg-stone-50 rounded-full transition-colors"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
+              {isAdmin && (
+                <button 
+                  onClick={() => setIsRewardModalOpen(true)}
+                  className="text-stone-400 hover:text-stone-600 p-2 hover:bg-stone-50 rounded-full transition-colors"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              )}
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1579,6 +1697,14 @@ export default function App() {
             }}
           />
         )}
+        {isSettingsModalOpen && currentUser && (
+          <UserSettingsModal
+            role={currentUser}
+            currentAvatar={profiles.find(p => p.role === currentUser)?.avatar_url}
+            onClose={() => setIsSettingsModalOpen(false)}
+            onUpdateAvatar={(url) => handleUpdateAvatar(currentUser, url)}
+          />
+        )}
         {isRewardModalOpen && (
           <RewardManagementModal
             rewards={rewards}
@@ -1606,6 +1732,7 @@ export default function App() {
           <MessageBoardModal
             messages={messages}
             currentUser={currentUser}
+            profiles={profiles}
             onClose={() => setIsMessageBoardOpen(false)}
             onSend={handleAddMessage}
             onLike={handleLikeMessage}
@@ -1616,7 +1743,7 @@ export default function App() {
   );
 }
 
-function MessageBoardModal({ messages, currentUser, onClose, onSend, onLike }: { messages: Message[], currentUser: string, onClose: () => void, onSend: (content: string) => void, onLike: (id: string) => void }) {
+function MessageBoardModal({ messages, currentUser, profiles, onClose, onSend, onLike }: { messages: Message[], currentUser: string, profiles: Profile[], onClose: () => void, onSend: (content: string) => void, onLike: (id: string) => void }) {
   const [content, setContent] = useState('');
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -1648,7 +1775,8 @@ function MessageBoardModal({ messages, currentUser, onClose, onSend, onLike }: {
               const isMe = msg.user === currentUser;
               return (
                 <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className={`flex items-center gap-2 mb-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6" />
                     <span className="text-xs font-bold text-stone-600">{msg.user}</span>
                     <span className="text-[10px] text-stone-400">{new Date(msg.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                   </div>
@@ -1898,7 +2026,7 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
   );
 }
 
-function GoalCard({ goal, currentUser, onAddProgress, onMarkAsDone, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, onAddProgress: () => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
+function GoalCard({ goal, currentUser, profiles, onAddProgress, onMarkAsDone, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, profiles: Profile[], onAddProgress: () => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const isCompleted = goal.progress >= 100 && goal.completedAt !== undefined;
   const isPendingConfirmation = goal.progress >= 99 && !goal.completedAt;
@@ -1958,8 +2086,13 @@ function GoalCard({ goal, currentUser, onAddProgress, onMarkAsDone, onConfirm, o
             </div>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
-            <div className="text-xs font-bold text-stone-700">{goal.progress}%</div>
-            <div className="w-16 h-1.5 bg-stone-100 rounded-full overflow-hidden">
+            <div className="flex -space-x-1.5 mb-1">
+              {assignees.map((a, i) => (
+                <UserAvatar key={a} role={a} profiles={profiles} className="w-5 h-5 border-1 border-white" />
+              ))}
+            </div>
+            <div className="text-[10px] font-bold text-stone-700">{goal.progress}%</div>
+            <div className="w-16 h-1 bg-stone-100 rounded-full overflow-hidden">
               <div 
                 className={`h-full rounded-full ${isCompleted ? 'bg-emerald-500' : isPendingConfirmation ? 'bg-blue-500' : 'bg-orange-500'}`}
                 style={{ width: `${goal.progress}%` }}
@@ -1982,8 +2115,15 @@ function GoalCard({ goal, currentUser, onAddProgress, onMarkAsDone, onConfirm, o
                 <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-xl">{goal.description || '暂无描述'}</p>
                 
                 <div className="flex items-center gap-2 text-xs text-stone-500">
-                  <Users className="w-3 h-3 shrink-0" />
-                  <span>发起: {goal.creator || '管理员'} | 责任: {assignees.join(', ')}</span>
+                  <UserAvatar role={goal.creator || '管理员'} profiles={profiles} className="w-5 h-5" />
+                  <span>发起: {goal.creator || '管理员'}</span>
+                  <span className="mx-1">|</span>
+                  <div className="flex -space-x-1">
+                    {assignees.map(a => (
+                      <UserAvatar key={a} role={a} profiles={profiles} className="w-5 h-5 border-1 border-white" />
+                    ))}
+                  </div>
+                  <span>责任: {assignees.join(', ')}</span>
                 </div>
                 
                 <div className="flex items-center gap-2 text-xs text-stone-500">
@@ -2317,6 +2457,59 @@ function HistoryModal({ member, txs, onClose }: { member: string, txs: Transacti
               </div>
             ))
           )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function UserSettingsModal({ role, currentAvatar, onClose, onUpdateAvatar }: { role: string, currentAvatar?: string, onClose: () => void, onUpdateAvatar: (url: string) => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+        animate={{ opacity: 1, scale: 1, y: 0 }} 
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative bg-white rounded-[2rem] shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+          <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+            <Settings className="w-5 h-5 text-indigo-500" />
+            个人设置 - {role}
+          </h2>
+          <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="p-6 overflow-y-auto space-y-6">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-24 h-24 rounded-full bg-stone-100 border-4 border-white shadow-md overflow-hidden flex items-center justify-center text-4xl">
+              {currentAvatar && (currentAvatar.startsWith('http') || currentAvatar?.startsWith('data:image')) ? (
+                <img src={currentAvatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                currentAvatar || (role === '爸爸' ? '👨🏻' : role === '妈妈' ? '👩🏻' : role === '姐姐' ? '👧🏻' : '👶🏻')
+              )}
+            </div>
+            <p className="text-sm text-stone-500 font-medium">选择一个您喜欢的头像</p>
+          </div>
+
+          <div className="grid grid-cols-5 gap-3 max-h-60 overflow-y-auto p-2 no-scrollbar">
+            {AVATARS.map(a => (
+              <button
+                key={a}
+                onClick={() => onUpdateAvatar(a)}
+                className={`text-3xl p-2 rounded-xl transition-all hover:scale-110 ${currentAvatar === a ? 'bg-indigo-50 ring-2 ring-indigo-500 ring-offset-2' : 'hover:bg-stone-50'}`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
         </div>
       </motion.div>
     </div>
