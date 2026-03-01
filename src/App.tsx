@@ -252,9 +252,9 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                     repeat: Infinity,
                     delay: i * 0.5 
                   },
-                  opacity: { duration: 0.5, repeat: Infinity },
-                  scale: { duration: 1, repeat: Infinity },
-                  rotate: { duration: 1, repeat: Infinity }
+                  opacity: msg.effect === 'blink' ? { duration: 0.5, repeat: Infinity } : { duration: 0.5 },
+                  scale: msg.effect === 'zoom' ? { duration: 1, repeat: Infinity } : { duration: 1 },
+                  rotate: msg.effect === 'rotate' ? { duration: 1, repeat: Infinity } : { duration: 1 }
                 }}
                 className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm"
                 style={{ 
@@ -773,7 +773,12 @@ export default function App() {
             const p = payload.new;
             setProfiles(prev => {
                 const idx = prev.findIndex(pr => pr.role === p.role);
-                const newProfile = { role: p.role, pin: p.pin, layout_config: p.layout_config || DEFAULT_LAYOUT };
+                const newProfile = { 
+                    role: p.role, 
+                    pin: p.pin, 
+                    layout_config: p.layout_config || DEFAULT_LAYOUT,
+                    avatar_url: p.avatar_url
+                };
                 if (idx >= 0) {
                     const newProfiles = [...prev];
                     newProfiles[idx] = newProfile;
@@ -1355,6 +1360,38 @@ export default function App() {
       if (profile.pin?.trim() === pin.trim()) {
         console.log('Login successful');
         setCurrentUser(role);
+
+        // Daily Login Bonus
+        try {
+            const today = getLocalDateString(new Date());
+            const { data: checkins } = await supabase
+              .from('checkins')
+              .select('*')
+              .eq('member', role)
+              .eq('date', today);
+              
+            if (!checkins || checkins.length === 0) {
+              // First login today
+              const checkinId = generateId();
+              await supabase.from('checkins').insert({ id: checkinId, member: role, date: today });
+              
+              const txId = generateId();
+              const bonusAmount = 1;
+              await supabase.from('transactions').insert({
+                id: txId,
+                member: role,
+                amount: bonusAmount,
+                reason: '每日登录奖励',
+                type: 'earned',
+                date: new Date().toISOString()
+              });
+              
+              showToast(`每日登录奖励 +${bonusAmount} 分`, 'success');
+            }
+        } catch (e) {
+            console.error('Error processing daily login bonus:', e);
+        }
+
         // Load user layout
         if (profile.layout_config) {
           setLayout(profile.layout_config);
@@ -1692,6 +1729,10 @@ export default function App() {
                 积分规则说明
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-left">
+                <div className="space-y-1">
+                  <div className="text-xs text-stone-400">每日签到</div>
+                  <div className="font-bold text-stone-700">每日登录 <span className="text-emerald-500">+1</span></div>
+                </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">基础奖励</div>
                   <div className="font-bold text-stone-700">完成目标 <span className="text-emerald-500">+10</span></div>

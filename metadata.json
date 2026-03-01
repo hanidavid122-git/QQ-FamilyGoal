@@ -1,5 +1,5 @@
 {
   "name": "多盈家庭目标",
   "description": "多盈家庭目标分享与追踪系统",
-  "requestFramePermissions": ["camera"]
+  "requestFramePermissions": []
 }
