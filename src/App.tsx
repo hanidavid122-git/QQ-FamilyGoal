@@ -53,7 +53,7 @@ type Reward = {
   iconName?: string;
 };
 
-type FilterType = '全部' | '进行中' | '已完成';
+type FilterType = '全部' | '规划中' | '进行中' | '待确认' | '已完成';
 
 const STORAGE_KEY = 'family_goals_data';
 const TX_KEY = 'family_goals_txs';
@@ -216,6 +216,7 @@ export default function App() {
         const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         const localTxs = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
         const localAchs = JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
+        const localCheckIns = JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
         const localRewards = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null');
 
         if (localGoals.length > 0) {
@@ -640,9 +641,84 @@ export default function App() {
     }
   };
 
+  const handleRecoverFromLocal = async () => {
+    if (!window.confirm('这将尝试从浏览器本地缓存读取旧版数据并同步到数据库。\n\n适用于：\n1. 刚刚配置好数据库\n2. 之前在本地使用过且数据未丢失\n\n注意：如果数据库中已有较新数据，请谨慎操作。是否继续？')) {
+      return;
+    }
+
+    try {
+      const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      const localTxs = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
+      const localAchs = JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
+      const localCheckIns = JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
+      const localRewards = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null');
+
+      let restoredCount = 0;
+
+      if (localGoals.length > 0) {
+        const mappedGoals = localGoals.map((g: any) => ({
+          id: g.id, name: g.name, description: g.description, start_date: g.startDate,
+          end_date: g.endDate, progress: g.progress, creator: g.creator || '爸爸',
+          assignees: g.assignees || (g.assignee ? [g.assignee] : ['爸爸']),
+          assignee: g.assignee, signature: g.signature || '', priority: g.priority || '中',
+          completed_at: g.completedAt, confirmations: g.confirmations || {}
+        }));
+        const { error } = await supabase.from('goals').upsert(mappedGoals);
+        if (error) throw error;
+        restoredCount += localGoals.length;
+      }
+
+      if (localTxs.length > 0) {
+        const { error } = await supabase.from('transactions').upsert(localTxs);
+        if (error) throw error;
+        restoredCount += localTxs.length;
+      }
+
+      if (localAchs.length > 0) {
+        const mappedAchs = localAchs.map((a: any) => ({
+          id: a.id, member: a.member, ach_id: a.achId, date: a.date
+        }));
+        const { error } = await supabase.from('achievements').upsert(mappedAchs);
+        if (error) throw error;
+        restoredCount += localAchs.length;
+      }
+      
+      if (localCheckIns.length > 0) {
+          const mappedCheckIns = localCheckIns.map((c: any) => ({
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+            member: c.member, date: c.date
+          }));
+          const { error } = await supabase.from('checkins').upsert(mappedCheckIns);
+          if (error) throw error;
+          restoredCount += localCheckIns.length;
+      }
+
+      if (localRewards && localRewards.length > 0) {
+        const mappedRewards = localRewards.map((r: any) => ({
+          id: r.id, name: r.name, cost: r.cost, description: r.description,
+          is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName
+        }));
+        const { error } = await supabase.from('rewards').upsert(mappedRewards);
+        if (error) throw error;
+        restoredCount += localRewards.length;
+      }
+
+      if (restoredCount === 0) {
+        showToast('本地缓存中没有找到数据', 'error');
+      } else {
+        showToast(`成功恢复 ${restoredCount} 条记录，页面即将刷新`);
+        localStorage.setItem('family_goals_migrated', 'true');
+        setTimeout(() => window.location.reload(), 1500);
+      }
+    } catch (e) {
+      console.error('Recovery failed', e);
+      showToast('恢复失败，请检查控制台错误', 'error');
+    }
+  };
+
   const handleExport = () => {
     const data = {
-      appVersion: "1.1.0",
+      appVersion: "2.0.0",
       goals,
       txs,
       achs,
@@ -672,7 +748,7 @@ export default function App() {
         let importedRewards = data.rewards || DEFAULT_REWARDS;
         
         // Migrate from older versions
-        if (version !== '1.1.0') {
+        if (version !== '2.0.0') {
           // Add confirmations object if missing
           importedGoals = importedGoals.map((g: any) => ({
             ...g,
@@ -743,8 +819,10 @@ export default function App() {
   }, [txs, lbTab, memberStats]);
 
   const filteredGoals = goals.filter(g => {
-    if (filter === '进行中') return g.progress < 100;
-    if (filter === '已完成') return g.progress >= 100;
+    if (filter === '规划中') return g.progress === 0;
+    if (filter === '进行中') return g.progress > 0 && g.progress < 99;
+    if (filter === '待确认') return g.progress >= 99 && !g.completedAt;
+    if (filter === '已完成') return g.progress >= 100 && g.completedAt;
     return true;
   });
 
@@ -868,7 +946,7 @@ export default function App() {
             <Heart className="w-6 h-6 fill-current" />
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
               多盈家庭目标
-              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v1.1.1</span>
+              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.0</span>
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -963,12 +1041,12 @@ export default function App() {
               <Target className="w-6 h-6 text-orange-500" />
               任务列表
             </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              {(['全部', '进行中', '已完成'] as FilterType[]).map(f => (
+            <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-2 sm:pb-0 no-scrollbar">
+              {(['全部', '规划中', '进行中', '待确认', '已完成'] as FilterType[]).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer ${
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     filter === f 
                       ? 'bg-stone-800 text-white' 
                       : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
@@ -1232,6 +1310,7 @@ export default function App() {
             onClose={() => setIsDataModalOpen(false)}
             onExport={handleExport}
             onImport={handleImport}
+            onRecover={handleRecoverFromLocal}
           />
         )}
         {isRewardModalOpen && (
@@ -1262,7 +1341,7 @@ export default function App() {
   );
 }
 
-function DataManagementModal({ onClose, onExport, onImport }: { onClose: () => void, onExport: () => void, onImport: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+function DataManagementModal({ onClose, onExport, onImport, onRecover }: { onClose: () => void, onExport: () => void, onImport: (e: React.ChangeEvent<HTMLInputElement>) => void, onRecover: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -1275,6 +1354,11 @@ function DataManagementModal({ onClose, onExport, onImport }: { onClose: () => v
         </p>
         
         <div className="space-y-4">
+          <button onClick={onRecover} className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 py-3 rounded-xl font-medium transition-colors cursor-pointer border border-blue-200">
+            <History className="w-5 h-5" />
+            从本地缓存恢复
+          </button>
+
           <button onClick={onExport} className="w-full flex items-center justify-center gap-2 bg-stone-100 hover:bg-stone-200 text-stone-700 py-3 rounded-xl font-medium transition-colors cursor-pointer">
             <Download className="w-5 h-5" />
             导出数据 (备份)
@@ -1405,6 +1489,7 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
 }
 
 function GoalCard({ goal, currentUser, onAddProgress, onMarkAsDone, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, onAddProgress: () => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const isCompleted = goal.progress >= 100 && goal.completedAt !== undefined;
   const isPendingConfirmation = goal.progress >= 99 && !goal.completedAt;
   
@@ -1432,139 +1517,153 @@ function GoalCard({ goal, currentUser, onAddProgress, onMarkAsDone, onConfirm, o
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col ${
+      className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col transition-all ${
         isCompleted ? 'border-emerald-200' : isPendingConfirmation ? 'border-blue-200' : isOverdue ? 'border-red-200' : 'border-stone-200'
       }`}
     >
-      <div className="p-6 flex-grow">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex-grow pr-2">
+      <div 
+        className="p-4 cursor-pointer hover:bg-stone-50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex justify-between items-start gap-3">
+          <div className="flex-grow min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <WarningLight status={warningStatus} />
-              <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+              <h3 className="text-base font-bold text-stone-900 truncate flex items-center gap-2">
                 {goal.name}
-                {isCompleted && <CheckCircle className="w-5 h-5 text-emerald-500" />}
+                {isCompleted && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />}
               </h3>
             </div>
-            <div className="flex items-center gap-2 mt-1 mb-2">
-              <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                 goal.priority === '高' ? 'bg-red-100 text-red-700' : 
                 goal.priority === '中' ? 'bg-orange-100 text-orange-700' : 
                 'bg-stone-100 text-stone-700'
               }`}>
-                优先级: {goal.priority}
+                {goal.priority}
+              </span>
+              <span className="text-xs text-stone-400">
+                {isCompleted ? '已完成' : `剩余 ${diffDays} 天`}
               </span>
             </div>
-            <p className="text-sm text-stone-500 line-clamp-2">{goal.description}</p>
           </div>
-          {canEdit && (
-            <div className="flex gap-1 ml-4 shrink-0">
-              <button onClick={onEdit} className="p-2 text-stone-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors cursor-pointer">
-                <Edit2 className="w-4 h-4" />
-              </button>
-              <button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer">
-                <Trash2 className="w-4 h-4" />
-              </button>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <div className="text-xs font-bold text-stone-700">{goal.progress}%</div>
+            <div className="w-16 h-1.5 bg-stone-100 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full ${isCompleted ? 'bg-emerald-500' : isPendingConfirmation ? 'bg-blue-500' : 'bg-orange-500'}`}
+                style={{ width: `${goal.progress}%` }}
+              />
             </div>
-          )}
-        </div>
-
-        <div className="space-y-3 mb-6">
-          <div className="flex items-center gap-2 text-sm text-stone-600">
-            <Users className="w-4 h-4 text-stone-400 shrink-0" />
-            <span>发起人: {goal.creator || '管理员'} | 责任人: {assignees.join(', ')}</span>
-          </div>
-          {isPendingConfirmation && (
-            <div className="flex flex-col gap-2 text-sm text-stone-600">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
-                <span className="text-blue-600 font-medium">等待全家确认 ({confirmedCount}/4):</span>
-              </div>
-              <div className="flex flex-wrap gap-2 pl-6">
-                {ROLES.map(r => (
-                  <div key={r} className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${confirmations[r] ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-stone-50 border-stone-200 text-stone-600'}`}>
-                    {confirmations[r] ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3 text-stone-300" />}
-                    {r}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="flex items-center gap-2 text-sm text-stone-600">
-            <Calendar className="w-4 h-4 text-stone-400 shrink-0" />
-            <span>{goal.startDate} 至 {goal.endDate}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm font-medium">
-            {isCompleted ? (
-              <span className="text-emerald-600 flex items-center gap-1"><CheckCircle className="w-4 h-4" /> 已完成</span>
-            ) : isPendingConfirmation ? (
-              <span className="text-blue-600 flex items-center gap-1"><Clock className="w-4 h-4" /> 待确认 ({confirmedCount}/4)</span>
-            ) : isOverdue ? (
-              <span className="text-red-600 flex items-center gap-1"><AlertCircle className="w-4 h-4" /> 已逾期 {Math.abs(diffDays)} 天</span>
-            ) : (
-              <span className="text-orange-600 flex items-center gap-1"><Clock className="w-4 h-4" /> 剩余 {diffDays} 天</span>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-2 mt-auto">
-          <div className="flex justify-between text-sm font-medium">
-            <span className="text-stone-700">进度</span>
-            <span className={isCompleted ? 'text-emerald-600' : 'text-stone-700'}>{goal.progress}%</span>
-          </div>
-          <div className="h-3 w-full bg-stone-100 rounded-full overflow-hidden">
-            <motion.div 
-              className={`h-full rounded-full ${isCompleted ? 'bg-emerald-500' : isPendingConfirmation ? 'bg-blue-500' : 'bg-orange-500'}`}
-              initial={{ width: 0 }}
-              animate={{ width: `${goal.progress}%` }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-            />
           </div>
         </div>
       </div>
-      
-      {!isCompleted && (
-        <div className="px-6 py-4 bg-stone-50 border-t border-stone-100 flex flex-col gap-2">
-          {goal.progress < 99 && canAddProgress && (
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                onClick={onAddProgress}
-                className="py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" /> 进度+10%
-              </button>
-              <button 
-                onClick={onMarkAsDone}
-                className="py-2 bg-orange-500 text-white hover:bg-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" /> 确认完成
-              </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-0 border-t border-stone-100">
+              <div className="py-3 space-y-3">
+                <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-xl">{goal.description || '暂无描述'}</p>
+                
+                <div className="flex items-center gap-2 text-xs text-stone-500">
+                  <Users className="w-3 h-3 shrink-0" />
+                  <span>发起: {goal.creator || '管理员'} | 责任: {assignees.join(', ')}</span>
+                </div>
+                
+                <div className="flex items-center gap-2 text-xs text-stone-500">
+                  <Calendar className="w-3 h-3 shrink-0" />
+                  <span>{goal.startDate} 至 {goal.endDate}</span>
+                </div>
+
+                {isPendingConfirmation && (
+                  <div className="bg-blue-50 p-3 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-medium text-blue-700">
+                      <Clock className="w-3 h-3" />
+                      <span>等待确认 ({confirmedCount}/4)</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {ROLES.map(r => (
+                        <div key={r} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${confirmations[r] ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-white border-blue-100 text-stone-400'}`}>
+                          {confirmations[r] ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+                          {r}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 mt-2">
+                {!isCompleted && (
+                  <>
+                    {goal.progress < 99 && canAddProgress && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onAddProgress(); }}
+                          className="py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" /> 进度+10%
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onMarkAsDone(); }}
+                          className="py-2 bg-orange-500 text-white hover:bg-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> 确认完成
+                        </button>
+                      </div>
+                    )}
+                    {goal.progress >= 99 && !isCompleted && (
+                      <div className="flex flex-wrap gap-2">
+                        {ROLES.map(r => {
+                          if (confirmations[r]) return null;
+                          const canConfirm = isAdmin || r === currentUser;
+                          return (
+                            <button 
+                              key={r}
+                              onClick={(e) => { e.stopPropagation(); canConfirm && onConfirm(r); }}
+                              disabled={!canConfirm}
+                              className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-1 ${
+                                canConfirm 
+                                  ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
+                                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                              }`}
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> {r} 确认
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {canEdit && (
+                  <div className="flex gap-2 pt-2 border-t border-stone-100 mt-2 justify-end">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                      className="px-3 py-1.5 text-xs font-medium text-stone-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Edit2 className="w-3 h-3" /> 编辑
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                      className="px-3 py-1.5 text-xs font-medium text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" /> 删除
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-          {goal.progress >= 99 && !isCompleted && (
-            <div className="flex flex-wrap gap-2">
-              {ROLES.map(r => {
-                if (confirmations[r]) return null;
-                const canConfirm = isAdmin || r === currentUser;
-                return (
-                  <button 
-                    key={r}
-                    onClick={() => canConfirm && onConfirm(r)}
-                    disabled={!canConfirm}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-1 ${
-                      canConfirm 
-                        ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
-                        : 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> {r} 确认完成
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
