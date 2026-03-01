@@ -235,12 +235,16 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
         
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
-            {messages.slice(-15).map((msg, i) => (
+            {messages.slice(-15).map((msg, i) => {
+              // Generate a pseudo-random vertical position based on message ID to keep it consistent
+              const randomTop = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 80) + 10;
+              
+              return (
               <motion.div
                 key={msg.id}
-                initial={{ x: '100%', opacity: 0 }}
+                initial={{ left: '100%', x: 0, opacity: 0 }}
                 animate={{ 
-                  x: '-150%', 
+                  x: '-150vw', 
                   opacity: msg.effect === 'blink' ? [1, 0.5, 1] : 1,
                   scale: msg.effect === 'zoom' ? [1, 1.2, 1] : 1,
                   rotate: msg.effect === 'rotate' ? [0, 5, -5, 0] : 0
@@ -258,7 +262,7 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                 }}
                 className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm"
                 style={{ 
-                  top: `${(i % 5) * 18 + 10}%`,
+                  top: `${randomTop}%`,
                   fontSize: msg.font_size || '0.9rem',
                   color: msg.color || '#000000'
                 }}
@@ -268,7 +272,8 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                 <span style={{ color: msg.color }}>{msg.content}</span>
                 {msg.likes > 0 && <span className="text-xs text-pink-400 flex items-center">❤️ {msg.likes}</span>}
               </motion.div>
-            ))}
+              );
+            })}
           </AnimatePresence>
           {messages.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
