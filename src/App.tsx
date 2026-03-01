@@ -344,6 +344,7 @@ export default function App() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginRole, setLoginRole] = useState<string | null>(null);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
+  const [profilesTableMissing, setProfilesTableMissing] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -397,12 +398,21 @@ export default function App() {
         }
         
         // Insert default profiles if not exist
-        const { data: existingProfiles } = await supabase.from('profiles').select('role');
-        const existingRoles = existingProfiles?.map(p => p.role) || [];
-        const missingRoles = ROLES.filter(r => !existingRoles.includes(r));
-        
-        if (missingRoles.length > 0) {
-            await supabase.from('profiles').insert(missingRoles.map(r => ({ role: r, pin: '1234' })));
+        const profilesRes = await supabase.from('profiles').select('role');
+        if (profilesRes.error) {
+            if (profilesRes.error.code === '42P01') {
+                console.warn('Profiles table missing, skipping profile migration.');
+            } else {
+                throw profilesRes.error;
+            }
+        } else {
+            const existingProfiles = profilesRes.data;
+            const existingRoles = existingProfiles?.map(p => p.role) || [];
+            const missingRoles = ROLES.filter(r => !existingRoles.includes(r));
+            
+            if (missingRoles.length > 0) {
+                await supabase.from('profiles').insert(missingRoles.map(r => ({ role: r, pin: '1234' })));
+            }
         }
 
         localStorage.setItem('family_goals_migrated', 'true');
@@ -415,12 +425,12 @@ export default function App() {
       setLoading(true);
       try {
         const [
-          { data: goalsData },
-          { data: txsData },
-          { data: achsData },
-          { data: rewardsData },
-          { data: msgsData },
-          { data: profilesData }
+          goalsRes,
+          txsRes,
+          achsRes,
+          rewardsRes,
+          msgsRes,
+          profilesRes
         ] = await Promise.all([
           supabase.from('goals').select('*'),
           supabase.from('transactions').select('*'),
@@ -429,6 +439,18 @@ export default function App() {
           supabase.from('messages').select('*').order('date', { ascending: true }),
           supabase.from('profiles').select('*')
         ]);
+
+        const goalsData = goalsRes.data;
+        const txsData = txsRes.data;
+        const achsData = achsRes.data;
+        const rewardsData = rewardsRes.data;
+        const msgsData = msgsRes.data;
+        const profilesData = profilesRes.data;
+
+        if (profilesRes.error && profilesRes.error.code === '42P01') {
+          console.warn('Profiles table does not exist. Please run the SQL schema in Supabase dashboard.');
+          setProfilesTableMissing(true);
+        }
 
         if (goalsData) {
           const goalsToUpdate = goalsData.filter(g => g.progress === 100 && !g.completed_at);
@@ -1103,7 +1125,6 @@ export default function App() {
     if (role === '管理员') {
       if (pin === 'admin123') { // Simple admin password
         setCurrentUser('管理员');
-        setIsAdmin(true);
         return true;
       }
       return false;
@@ -1113,7 +1134,6 @@ export default function App() {
     const profile = profiles.find(p => p.role === role);
     if (profile && profile.pin === pin) {
       setCurrentUser(role);
-      setIsAdmin(false);
       // Load user layout
       if (profile.layout_config) {
         setLayout(profile.layout_config);
@@ -1123,9 +1143,11 @@ export default function App() {
       return true;
     }
     
-    // If no profile found (should not happen as we insert defaults), try default pin
-    if (!profile && pin === '1234') {
-       return true;
+    // Fallback: if no profiles loaded (e.g. table missing), allow default PIN '1234'
+    if (profiles.length === 0 && pin === '1234') {
+      setCurrentUser(role);
+      setLayout(DEFAULT_LAYOUT);
+      return true;
     }
 
     return false;
@@ -1218,6 +1240,16 @@ export default function App() {
           </div>
           <h1 className="text-2xl font-bold mb-2">欢迎来到家庭目标</h1>
           <p className="text-stone-500 mb-8">请选择您的角色。注意：角色选择后将无法更改。</p>
+          
+          {profilesTableMissing && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm flex items-start gap-3 text-left">
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold mb-1">数据库表缺失</p>
+                <p>检测到 `profiles` 表不存在。请在 Supabase 控制台运行 `supabase-schema.sql` 中的 SQL 语句。当前将使用默认 PIN 码 (1234) 登录。</p>
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-2 gap-4 mb-6">
             {ROLES.map(role => (
