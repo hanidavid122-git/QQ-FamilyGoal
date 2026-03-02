@@ -1434,64 +1434,58 @@ export default function App() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center"
         >
-          {loading ? (
-            <div className="py-12 flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
-              <p className="text-stone-500 font-medium">正在同步家庭数据...</p>
-            </div>
-          ) : (
-            <>
-              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Users className="w-8 h-8 text-orange-500" />
-              </div>
-              <h1 className="text-2xl font-bold mb-2">欢迎来到家庭目标</h1>
-              <p className="text-stone-500 mb-8">请选择您的角色。注意：角色选择后将无法更改。</p>
-              
-              {profilesTableMissing && (
-                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm flex flex-col items-start gap-3 text-left">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold mb-1">数据库连接异常</p>
-                      <p>无法连接到 `profiles` 表。请确保已在 Supabase 运行 SQL 脚本。如果已运行，请尝试点击下方按钮重置本地缓存。</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      localStorage.removeItem('family_goals_migrated');
-                      window.location.reload();
-                    }}
-                    className="mt-2 px-4 py-2 bg-amber-200 hover:bg-amber-300 rounded-xl font-bold transition-colors text-amber-800"
-                  >
-                    重置并刷新
-                  </button>
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+            <Users className="w-8 h-8 text-orange-500" />
+            {loading && (
+              <div className="absolute -top-1 -right-1 w-5 h-5 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin bg-white" />
+            )}
+          </div>
+          <h1 className="text-2xl font-bold mb-2">欢迎来到家庭目标</h1>
+          <p className="text-stone-500 mb-8">请选择您的角色。注意：角色选择后将无法更改。</p>
+          
+          {profilesTableMissing && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700 text-sm flex flex-col items-start gap-3 text-left">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold mb-1">数据库连接异常</p>
+                  <p>无法连接到 `profiles` 表。请确保已在 Supabase 运行 SQL 脚本。如果已运行，请尝试点击下方按钮重置本地缓存。</p>
                 </div>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {ROLES.map(role => (
-                  <button
-                    key={role}
-                    onClick={() => { 
-                      console.log('Role clicked:', role);
-                      setLoginRole(role); 
-                      setIsLoginModalOpen(true); 
-                    }}
-                    className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
-                  >
-                    {role}
-                  </button>
-                ))}
               </div>
-              <button
-                onClick={() => { setLoginRole('管理员'); setIsLoginModalOpen(true); }}
-                className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
+              <button 
+                onClick={() => {
+                  localStorage.removeItem('family_goals_migrated');
+                  window.location.reload();
+                }}
+                className="mt-2 px-4 py-2 bg-amber-200 hover:bg-amber-300 rounded-xl font-bold transition-colors text-amber-800"
               >
-                <Settings className="w-5 h-5" />
-                管理员 (可管理所有项目)
+                重置并刷新
               </button>
-            </>
+            </div>
           )}
+          
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {ROLES.map(role => (
+              <button
+                key={role}
+                onClick={() => { 
+                  console.log('Role clicked:', role);
+                  setLoginRole(role); 
+                  setIsLoginModalOpen(true); 
+                }}
+                className="py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-orange-500 hover:bg-orange-50 transition-all font-medium text-lg cursor-pointer"
+              >
+                {role}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => { setLoginRole('管理员'); setIsLoginModalOpen(true); }}
+            className="w-full py-4 px-4 rounded-2xl border-2 border-stone-100 hover:border-blue-500 hover:bg-blue-50 transition-all font-medium text-lg text-stone-600 hover:text-blue-600 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Settings className="w-5 h-5" />
+            管理员 (可管理所有项目)
+          </button>
         </motion.div>
 
         <AnimatePresence>
@@ -1518,6 +1512,9 @@ export default function App() {
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
               多盈家庭目标
               <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.1 弹幕版</span>
+              {loading && (
+                <div className="w-3 h-3 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin ml-1" />
+              )}
             </h1>
           </div>
           <div className="flex items-center gap-3">
