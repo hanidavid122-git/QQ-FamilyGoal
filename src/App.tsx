@@ -482,12 +482,7 @@ export default function App() {
   useEffect(() => {
     const migrateData = async () => {
       const isMigrated = localStorage.getItem('family_goals_migrated');
-      
-      // Check if DB is actually empty to decide if we should re-migrate
-      const { count, error: countErr } = await supabase.from('goals').select('*', { count: 'exact', head: true });
-      const dbIsEmpty = !countErr && count === 0;
-
-      if (isMigrated === 'true' && !dbIsEmpty) return;
+      if (isMigrated === 'true') return;
 
       console.log('Starting data migration/sync...');
       try {
@@ -497,6 +492,8 @@ export default function App() {
         const localCheckIns = JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
         const localRewards = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null');
 
+        const migrationPromises = [];
+
         if (localGoals.length > 0) {
           const mappedGoals = localGoals.map((g: any) => ({
             id: g.id, name: g.name, description: g.description, start_date: g.startDate,
@@ -505,18 +502,18 @@ export default function App() {
             assignee: g.assignee, signature: g.signature || '', priority: g.priority || '中',
             completed_at: g.completedAt, confirmations: g.confirmations || {}
           }));
-          await supabase.from('goals').upsert(mappedGoals);
+          migrationPromises.push(supabase.from('goals').upsert(mappedGoals));
         }
 
         if (localTxs.length > 0) {
-          await supabase.from('transactions').upsert(localTxs);
+          migrationPromises.push(supabase.from('transactions').upsert(localTxs));
         }
 
         if (localAchs.length > 0) {
           const mappedAchs = localAchs.map((a: any) => ({
             id: a.id, member: a.member, ach_id: a.achId, date: a.date
           }));
-          await supabase.from('achievements').upsert(mappedAchs);
+          migrationPromises.push(supabase.from('achievements').upsert(mappedAchs));
         }
 
         if (localCheckIns.length > 0) {
@@ -524,7 +521,7 @@ export default function App() {
             id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
             member: c.member, date: c.date
           }));
-          await supabase.from('checkins').upsert(mappedCheckIns);
+          migrationPromises.push(supabase.from('checkins').upsert(mappedCheckIns));
         }
 
         if (localRewards && localRewards.length > 0) {
@@ -532,18 +529,14 @@ export default function App() {
             id: r.id, name: r.name, cost: r.cost, description: r.description,
             is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName
           }));
-          await supabase.from('rewards').upsert(mappedRewards);
+          migrationPromises.push(supabase.from('rewards').upsert(mappedRewards));
         }
+
+        await Promise.all(migrationPromises);
         
         // Insert default profiles if not exist
         const profilesRes = await supabase.from('profiles').select('role');
-        if (profilesRes.error) {
-            if (profilesRes.error.code === '42P01') {
-                console.warn('Profiles table missing, skipping profile migration.');
-            } else {
-                throw profilesRes.error;
-            }
-        } else {
+        if (!profilesRes.error) {
             const existingProfiles = profilesRes.data;
             const existingRoles = existingProfiles?.map(p => p.role) || [];
             const missingRoles = ROLES.filter(r => !existingRoles.includes(r));
@@ -563,11 +556,12 @@ export default function App() {
       setLoading(true);
       try {
         // Load data independently to prevent one failure from blocking others
+        // Limit messages and transactions to improve initial load speed
         const goalsPromise = supabase.from('goals').select('*');
-        const txsPromise = supabase.from('transactions').select('*');
+        const txsPromise = supabase.from('transactions').select('*').order('date', { ascending: false }).limit(500);
         const achsPromise = supabase.from('achievements').select('*');
         const rewardsPromise = supabase.from('rewards').select('*');
-        const msgsPromise = supabase.from('messages').select('*').order('date', { ascending: true });
+        const msgsPromise = supabase.from('messages').select('*').order('date', { ascending: false }).limit(100);
         const profilesPromise = supabase.from('profiles').select('*');
 
         const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes] = await Promise.all([
@@ -585,14 +579,7 @@ export default function App() {
         }
 
         if (goalsRes.data) {
-          const goalsData = goalsRes.data;
-          const goalsToUpdate = goalsData.filter((g: any) => g.progress === 100 && !g.completed_at);
-          if (goalsToUpdate.length > 0) {
-            // Fire and forget update
-            Promise.all(goalsToUpdate.map((g: any) => supabase.from('goals').update({ progress: 99 }).eq('id', g.id))).catch(console.error);
-            goalsToUpdate.forEach((g: any) => g.progress = 99);
-          }
-          setGoals(goalsData.map((g: any) => ({
+          setGoals((goalsRes.data as any[]).map((g: any) => ({
             id: g.id,
             name: g.name,
             description: g.description,
@@ -609,7 +596,7 @@ export default function App() {
           })));
         }
 
-        if (txsRes.data) setTxs(txsRes.data as any[]);
+        if (txsRes.data) setTxs((txsRes.data as any[]).reverse());
         
         if (achsRes.data) {
           setAchs((achsRes.data as any[]).map(a => ({
@@ -633,7 +620,8 @@ export default function App() {
         }
 
         if (msgsRes.data) {
-          setMessages((msgsRes.data as any[]).map(m => {
+          const sortedMsgs = (msgsRes.data as any[]).reverse();
+          setMessages(sortedMsgs.map(m => {
             let extra: any = {};
             try {
               if (m.avatar && m.avatar.startsWith('{')) {
