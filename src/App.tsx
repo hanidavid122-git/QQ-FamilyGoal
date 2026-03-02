@@ -253,7 +253,6 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                   x: {
                     duration: msg.speed || 10, 
                     ease: "linear", 
-                    repeat: Infinity,
                     delay: i * 0.5 
                   },
                   opacity: msg.effect === 'blink' ? { duration: 0.5, repeat: Infinity } : { duration: 0.5 },
@@ -484,6 +483,11 @@ export default function App() {
       const isMigrated = localStorage.getItem('family_goals_migrated');
       if (isMigrated === 'true') return;
 
+      // Use a session-based lock to prevent multiple tabs from migrating at the same time
+      const migrationLock = sessionStorage.getItem('migration_in_progress');
+      if (migrationLock) return;
+      sessionStorage.setItem('migration_in_progress', 'true');
+
       console.log('Starting data migration/sync...');
       try {
         const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -502,18 +506,18 @@ export default function App() {
             assignee: g.assignee, signature: g.signature || '', priority: g.priority || '中',
             completed_at: g.completedAt, confirmations: g.confirmations || {}
           }));
-          migrationPromises.push(supabase.from('goals').upsert(mappedGoals));
+          migrationPromises.push(supabase.from('goals').upsert(mappedGoals, { onConflict: 'id' }));
         }
 
         if (localTxs.length > 0) {
-          migrationPromises.push(supabase.from('transactions').upsert(localTxs));
+          migrationPromises.push(supabase.from('transactions').upsert(localTxs, { onConflict: 'id' }));
         }
 
         if (localAchs.length > 0) {
           const mappedAchs = localAchs.map((a: any) => ({
             id: a.id, member: a.member, ach_id: a.achId, date: a.date
           }));
-          migrationPromises.push(supabase.from('achievements').upsert(mappedAchs));
+          migrationPromises.push(supabase.from('achievements').upsert(mappedAchs, { onConflict: 'id' }));
         }
 
         if (localCheckIns.length > 0) {
@@ -521,7 +525,7 @@ export default function App() {
             id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
             member: c.member, date: c.date
           }));
-          migrationPromises.push(supabase.from('checkins').upsert(mappedCheckIns));
+          migrationPromises.push(supabase.from('checkins').upsert(mappedCheckIns, { onConflict: 'id' }));
         }
 
         if (localRewards && localRewards.length > 0) {
@@ -529,10 +533,12 @@ export default function App() {
             id: r.id, name: r.name, cost: r.cost, description: r.description,
             is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName
           }));
-          migrationPromises.push(supabase.from('rewards').upsert(mappedRewards));
+          migrationPromises.push(supabase.from('rewards').upsert(mappedRewards, { onConflict: 'id' }));
         }
 
-        await Promise.all(migrationPromises);
+        if (migrationPromises.length > 0) {
+          await Promise.all(migrationPromises);
+        }
         
         // Insert default profiles if not exist
         const profilesRes = await supabase.from('profiles').select('role');
@@ -549,6 +555,8 @@ export default function App() {
         localStorage.setItem('family_goals_migrated', 'true');
       } catch (e) {
         console.error('Migration failed', e);
+      } finally {
+        sessionStorage.removeItem('migration_in_progress');
       }
     };
 
@@ -676,7 +684,7 @@ export default function App() {
 
   // Realtime subscriptions
   useEffect(() => {
-    const goalsSub = supabase.channel('goals_changes')
+    const channel = supabase.channel('db_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'goals' }, payload => {
         if (payload.eventType === 'INSERT') {
           const g = payload.new;
@@ -700,17 +708,15 @@ export default function App() {
         } else if (payload.eventType === 'DELETE') {
           setGoals(prev => prev.filter(p => p.id !== payload.old.id));
         }
-      }).subscribe();
-
-    const txsSub = supabase.channel('txs_changes')
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, payload => {
         setTxs(prev => {
           if (prev.some(p => p.id === payload.new.id)) return prev;
-          return [...prev, payload.new as Transaction];
+          const newList = [...prev, payload.new as Transaction];
+          // Keep only last 1000 transactions in state to prevent memory issues
+          return newList.length > 1000 ? newList.slice(-1000) : newList;
         });
-      }).subscribe();
-
-    const achsSub = supabase.channel('achs_changes')
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'achievements' }, payload => {
         setAchs(prev => {
           if (prev.some(p => p.id === payload.new.id)) return prev;
@@ -718,9 +724,7 @@ export default function App() {
             id: payload.new.id, member: payload.new.member, achId: payload.new.ach_id, date: payload.new.date
           }];
         });
-      }).subscribe();
-
-    const rewardsSub = supabase.channel('rewards_changes')
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rewards' }, payload => {
         if (payload.eventType === 'INSERT') {
           const r = payload.new;
@@ -735,32 +739,52 @@ export default function App() {
           const r = payload.new;
           setRewards(prev => prev.map(p => p.id === r.id ? {
             id: r.id, name: r.name, cost: r.cost, description: r.description,
-            isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
+            isActive: r.is_active, isCustom: r.is_custom, icon_name: r.icon_name
           } : p));
         } else if (payload.eventType === 'DELETE') {
           setRewards(prev => prev.filter(p => p.id !== payload.old.id));
         }
-      }).subscribe();
-
-    const msgsSub = supabase.channel('msgs_changes')
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, payload => {
         if (payload.eventType === 'INSERT') {
           const m = payload.new;
           setMessages(prev => {
             if (prev.some(p => p.id === m.id)) return prev;
-            return [...prev, {
-              id: m.id, user: m.user_name, content: m.content, date: m.date, likes: m.likes
-            }];
+            
+            let extra: any = {};
+            try {
+              if (m.avatar && m.avatar.startsWith('{')) {
+                extra = JSON.parse(m.avatar);
+              }
+            } catch(e) {}
+
+            const newMsg = {
+              id: m.id,
+              user: m.user_name,
+              content: m.content,
+              date: m.date,
+              likes: m.likes,
+              avatar: m.avatar,
+              color: m.color,
+              font_size: m.font_size,
+              speed: extra.s || extra.speed,
+              effect: extra.e || extra.effect,
+              duration: extra.d || extra.duration
+            };
+            const newList = [...prev, newMsg];
+            // Keep only last 200 messages in state to prevent memory issues
+            return newList.length > 200 ? newList.slice(-200) : newList;
           });
         } else if (payload.eventType === 'UPDATE') {
           const m = payload.new;
           setMessages(prev => prev.map(p => p.id === m.id ? {
-            id: m.id, user: m.user_name, content: m.content, date: m.date, likes: m.likes
+            ...p,
+            likes: m.likes,
+            content: m.content,
+            user: m.user_name
           } : p));
         }
-      }).subscribe();
-
-    const profilesSub = supabase.channel('profiles_changes')
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const p = payload.new;
@@ -779,22 +803,26 @@ export default function App() {
                 }
                 return [...prev, newProfile];
             });
-            // Update current user layout if changed
-            if (currentUser === p.role && p.layout_config) {
-                setLayout(p.layout_config);
-            }
+            // Note: We use a ref or check state inside the setter to avoid closure issues
+            // But for layout, we'll handle it in a separate useEffect watching profiles
         }
-      }).subscribe();
+      })
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(goalsSub);
-      supabase.removeChannel(txsSub);
-      supabase.removeChannel(achsSub);
-      supabase.removeChannel(rewardsSub);
-      supabase.removeChannel(msgsSub);
-      supabase.removeChannel(profilesSub);
+      supabase.removeChannel(channel);
     };
   }, []);
+
+  // Sync layout when profiles change (handles real-time layout updates for current user)
+  useEffect(() => {
+    if (currentUser) {
+      const myProfile = profiles.find(p => p.role === currentUser);
+      if (myProfile && JSON.stringify(myProfile.layout_config) !== JSON.stringify(layout)) {
+        setLayout(myProfile.layout_config);
+      }
+    }
+  }, [profiles, currentUser]);
 
   useEffect(() => { if (currentUser) localStorage.setItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
 
@@ -1052,13 +1080,13 @@ export default function App() {
           assignee: g.assignee, signature: g.signature || '', priority: g.priority || '中',
           completed_at: g.completedAt, confirmations: g.confirmations || {}
         }));
-        const { error } = await supabase.from('goals').upsert(mappedGoals);
+        const { error } = await supabase.from('goals').upsert(mappedGoals, { onConflict: 'id' });
         if (error) throw error;
         restoredCount += localGoals.length;
       }
 
       if (localTxs.length > 0) {
-        const { error } = await supabase.from('transactions').upsert(localTxs);
+        const { error } = await supabase.from('transactions').upsert(localTxs, { onConflict: 'id' });
         if (error) throw error;
         restoredCount += localTxs.length;
       }
@@ -1067,7 +1095,7 @@ export default function App() {
         const mappedAchs = localAchs.map((a: any) => ({
           id: a.id, member: a.member, ach_id: a.achId, date: a.date
         }));
-        const { error } = await supabase.from('achievements').upsert(mappedAchs);
+        const { error } = await supabase.from('achievements').upsert(mappedAchs, { onConflict: 'id' });
         if (error) throw error;
         restoredCount += localAchs.length;
       }
@@ -1077,7 +1105,7 @@ export default function App() {
             id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
             member: c.member, date: c.date
           }));
-          const { error } = await supabase.from('checkins').upsert(mappedCheckIns);
+          const { error } = await supabase.from('checkins').upsert(mappedCheckIns, { onConflict: 'id' });
           if (error) throw error;
           restoredCount += localCheckIns.length;
       }
@@ -1087,7 +1115,7 @@ export default function App() {
           id: r.id, name: r.name, cost: r.cost, description: r.description,
           is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName
         }));
-        const { error } = await supabase.from('rewards').upsert(mappedRewards);
+        const { error } = await supabase.from('rewards').upsert(mappedRewards, { onConflict: 'id' });
         if (error) throw error;
         restoredCount += localRewards.length;
       }
