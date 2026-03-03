@@ -220,6 +220,13 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
   const [selectedEffect, setSelectedEffect] = useState('default');
   const [selectedDuration, setSelectedDuration] = useState(24 * 60 * 60 * 1000);
   const [showPicker, setShowPicker] = useState(false);
+
+  // Lane system to prevent overlapping
+  const LANES_COUNT = 8;
+  const getLaneTop = (index: number) => {
+    const laneHeight = 80 / LANES_COUNT;
+    return 10 + (index % LANES_COUNT) * laneHeight;
+  };
   
   return (
     <div className="mb-8">
@@ -235,10 +242,18 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
         
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
-            {messages.slice(-15).map((msg, i) => {
-              // Generate a pseudo-random vertical position based on message ID to keep it consistent
-              const randomTop = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 80) + 10;
+            {messages.slice(-20).map((msg, i) => {
+              // Assign to a lane based on index or ID
+              const laneIndex = i % LANES_COUNT;
+              const top = getLaneTop(laneIndex);
+              // Add a small random offset to the top within the lane
+              const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
               
+              // Randomize speed slightly for each message
+              const baseSpeed = msg.speed || 10;
+              const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
+              const finalSpeed = Math.max(5, baseSpeed + speedVariation);
+
               return (
               <motion.div
                 key={msg.id}
@@ -251,9 +266,10 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                 }}
                 transition={{ 
                   x: {
-                    duration: msg.speed || 10, 
+                    duration: finalSpeed, 
                     ease: "linear", 
-                    delay: i * 0.5 
+                    repeat: Infinity,
+                    delay: i * 0.8 // Staggered entry
                   },
                   opacity: msg.effect === 'blink' ? { duration: 0.5, repeat: Infinity } : { duration: 0.5 },
                   scale: msg.effect === 'zoom' ? { duration: 1, repeat: Infinity } : { duration: 1 },
@@ -261,7 +277,7 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles }: { messages: M
                 }}
                 className="absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm"
                 style={{ 
-                  top: `${randomTop}%`,
+                  top: `${top + offset}%`,
                   fontSize: msg.font_size || '0.9rem',
                   color: msg.color || '#000000'
                 }}
@@ -490,11 +506,20 @@ export default function App() {
 
       console.log('Starting data migration/sync...');
       try {
-        const localGoals = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-        const localTxs = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
-        const localAchs = JSON.parse(localStorage.getItem(ACH_KEY) || '[]');
-        const localCheckIns = JSON.parse(localStorage.getItem(CHECKIN_KEY) || '[]');
-        const localRewards = JSON.parse(localStorage.getItem(REWARDS_KEY) || 'null');
+        const getLocalData = (key: string, fallback: string = '[]') => {
+          try {
+            return JSON.parse(localStorage.getItem(key) || fallback);
+          } catch (e) {
+            console.error(`Error parsing local storage key: ${key}`, e);
+            return JSON.parse(fallback);
+          }
+        };
+
+        const localGoals = getLocalData(STORAGE_KEY);
+        const localTxs = getLocalData(TX_KEY);
+        const localAchs = getLocalData(ACH_KEY);
+        const localCheckIns = getLocalData(CHECKIN_KEY);
+        const localRewards = getLocalData(REWARDS_KEY, 'null');
 
         const migrationPromises = [];
 
@@ -561,15 +586,34 @@ export default function App() {
     };
 
     const loadData = async () => {
-      setLoading(true);
+      // SWR Strategy: Load from cache first for instant UI
+      const cachedGoals = localStorage.getItem('cache_goals');
+      const cachedTxs = localStorage.getItem('cache_txs');
+      const cachedAchs = localStorage.getItem('cache_achs');
+      const cachedRewards = localStorage.getItem('cache_rewards');
+      const cachedMsgs = localStorage.getItem('cache_msgs');
+      const cachedProfiles = localStorage.getItem('cache_profiles');
+
+      if (cachedGoals) {
+        setGoals(JSON.parse(cachedGoals));
+        setLoading(false); // If we have cache, we can stop the "blocking" loading state
+      } else {
+        setLoading(true);
+      }
+      
+      if (cachedTxs) setTxs(JSON.parse(cachedTxs));
+      if (cachedAchs) setAchs(JSON.parse(cachedAchs));
+      if (cachedRewards) setRewards(JSON.parse(cachedRewards));
+      if (cachedMsgs) setMessages(JSON.parse(cachedMsgs));
+      if (cachedProfiles) setProfiles(JSON.parse(cachedProfiles));
+
       try {
-        // Load data independently to prevent one failure from blocking others
-        // Limit messages and transactions to improve initial load speed
+        // Fetch fresh data in background
         const goalsPromise = supabase.from('goals').select('*');
-        const txsPromise = supabase.from('transactions').select('*').order('date', { ascending: false }).limit(500);
+        const txsPromise = supabase.from('transactions').select('*').order('date', { ascending: false }).limit(200);
         const achsPromise = supabase.from('achievements').select('*');
         const rewardsPromise = supabase.from('rewards').select('*');
-        const msgsPromise = supabase.from('messages').select('*').order('date', { ascending: false }).limit(100);
+        const msgsPromise = supabase.from('messages').select('*').order('date', { ascending: false }).limit(50);
         const profilesPromise = supabase.from('profiles').select('*');
 
         const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes] = await Promise.all([
@@ -582,85 +626,65 @@ export default function App() {
         ]);
 
         if (profilesRes.error && (profilesRes.error as any).code === '42P01') {
-          console.warn('Profiles table does not exist.');
           setProfilesTableMissing(true);
         }
 
         if (goalsRes.data) {
-          setGoals((goalsRes.data as any[]).map((g: any) => ({
-            id: g.id,
-            name: g.name,
-            description: g.description,
-            startDate: g.start_date,
-            endDate: g.end_date,
-            progress: g.progress,
-            creator: g.creator,
-            assignees: g.assignees,
-            assignee: g.assignee,
-            signature: g.signature,
-            priority: g.priority,
-            completedAt: g.completed_at,
-            confirmations: g.confirmations
-          })));
+          const freshGoals = (goalsRes.data as any[]).map((g: any) => ({
+            id: g.id, name: g.name, description: g.description, startDate: g.start_date,
+            endDate: g.end_date, progress: g.progress, creator: g.creator,
+            assignees: g.assignees, assignee: g.assignee, signature: g.signature,
+            priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
+          }));
+          setGoals(freshGoals);
+          localStorage.setItem('cache_goals', JSON.stringify(freshGoals));
         }
 
-        if (txsRes.data) setTxs((txsRes.data as any[]).reverse());
+        if (txsRes.data) {
+          const freshTxs = (txsRes.data as any[]).reverse();
+          setTxs(freshTxs);
+          localStorage.setItem('cache_txs', JSON.stringify(freshTxs));
+        }
         
         if (achsRes.data) {
-          setAchs((achsRes.data as any[]).map(a => ({
-            id: a.id,
-            member: a.member,
-            achId: a.ach_id,
-            date: a.date
-          })));
+          const freshAchs = (achsRes.data as any[]).map(a => ({
+            id: a.id, member: a.member, achId: a.ach_id, date: a.date
+          }));
+          setAchs(freshAchs);
+          localStorage.setItem('cache_achs', JSON.stringify(freshAchs));
         }
 
         if (rewardsRes.data && rewardsRes.data.length > 0) {
-          setRewards((rewardsRes.data as any[]).map(r => ({
-            id: r.id,
-            name: r.name,
-            cost: r.cost,
-            description: r.description,
-            isActive: r.is_active,
-            isCustom: r.is_custom,
-            iconName: r.icon_name
-          })));
+          const freshRewards = (rewardsRes.data as any[]).map(r => ({
+            id: r.id, name: r.name, cost: r.cost, description: r.description,
+            isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
+          }));
+          setRewards(freshRewards);
+          localStorage.setItem('cache_rewards', JSON.stringify(freshRewards));
         }
 
         if (msgsRes.data) {
           const sortedMsgs = (msgsRes.data as any[]).reverse();
-          setMessages(sortedMsgs.map(m => {
+          const freshMsgs = sortedMsgs.map(m => {
             let extra: any = {};
-            try {
-              if (m.avatar && m.avatar.startsWith('{')) {
-                extra = JSON.parse(m.avatar);
-              }
-            } catch(e) {}
+            try { if (m.avatar && m.avatar.startsWith('{')) extra = JSON.parse(m.avatar); } catch(e) {}
             return {
-              id: m.id,
-              user: m.user_name,
-              content: m.content,
-              date: m.date,
-              likes: m.likes,
-              avatar: m.avatar,
-              color: m.color,
-              font_size: m.font_size,
-              speed: extra.s || extra.speed,
-              effect: extra.e || extra.effect,
-              duration: extra.d || extra.duration
+              id: m.id, user: m.user_name, content: m.content, date: m.date, likes: m.likes,
+              avatar: m.avatar, color: m.color, font_size: m.font_size,
+              speed: extra.s || extra.speed, effect: extra.e || extra.effect, duration: extra.d || extra.duration
             };
-          }));
+          });
+          setMessages(freshMsgs);
+          localStorage.setItem('cache_msgs', JSON.stringify(freshMsgs));
         }
 
         if (profilesRes.data && profilesRes.data.length > 0) {
-            setProfiles((profilesRes.data as any[]).map(p => ({
-                role: p.role,
-                pin: p.pin,
-                layout_config: p.layout_config || DEFAULT_LAYOUT,
-                avatar_url: p.avatar_url
-            })));
+            const freshProfiles = (profilesRes.data as any[]).map(p => ({
+                role: p.role, pin: p.pin, layout_config: p.layout_config || DEFAULT_LAYOUT, avatar_url: p.avatar_url
+            }));
+            setProfiles(freshProfiles);
+            localStorage.setItem('cache_profiles', JSON.stringify(freshProfiles));
         } else if (profilesRes.data && profilesRes.data.length === 0) {
-            console.log('Profiles table is empty, initializing default profiles...');
             const initialProfiles = ROLES.map(role => ({ role, pin: '1183' }));
             await supabase.from('profiles').insert(initialProfiles);
             setProfiles(initialProfiles.map(p => ({ ...p, layout_config: DEFAULT_LAYOUT, avatar_url: null })));
