@@ -22,7 +22,7 @@ export type Transaction = {
   member: string;
   amount: number;
   reason: string;
-  type: 'earned' | 'redeemed';
+  type: 'earned' | 'redeemed' | 'earn' | 'redeem';
 };
 
 export type Achievement = {

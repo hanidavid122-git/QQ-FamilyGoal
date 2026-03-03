@@ -67,7 +67,21 @@ export const DANMAKU_EFFECTS = [
   { label: '默认', value: 'default' },
   { label: '闪烁', value: 'blink' },
   { label: '放大', value: 'zoom' },
-  { label: '旋转', value: 'rotate' }
+  { label: '旋转', value: 'rotate' },
+  { label: '彩虹', value: 'rainbow' },
+  { label: '波动', value: 'wave' },
+  { label: '抖动', value: 'shake' },
+  { label: '模糊', value: 'blur' },
+  { label: '霓虹', value: 'neon' },
+  { label: '弹跳', value: 'bounce' },
+  { label: '脉冲', value: 'pulse' },
+  { label: '幽灵', value: 'ghost' },
+  { label: '翻转', value: 'flip' },
+  { label: '故障', value: 'glitch' },
+  { label: '火焰', value: 'fire' },
+  { label: '冰霜', value: 'ice' },
+  { label: '漂浮', value: 'float' },
+  { label: '倾斜', value: 'skew' }
 ];
 
 export const DANMAKU_DURATIONS = [
