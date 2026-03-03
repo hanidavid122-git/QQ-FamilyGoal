@@ -11,7 +11,7 @@ import {
 
 import { 
   Priority, Goal, Transaction, Achievement, Reward, FilterType, 
-  LayoutComponentId, LayoutConfig, Profile, Message
+  LayoutComponentId, LayoutConfig, Profile, Message, GoalComment
 } from './types';
 import { 
   ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
@@ -87,6 +87,30 @@ function getGoalScore(goal: Goal): number {
   else score += 10;
 
   return score;
+}
+
+function safeSetItem(key: string, value: string) {
+  if (value.length > 2000000) {
+    console.warn(`Value for key "${key}" is too large to cache (${Math.round(value.length / 1024)} KB)`);
+    return;
+  }
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`Storage quota exceeded for key "${key}", clearing cache...`, e);
+    // Clear all cache items to make room
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('cache_')) {
+        localStorage.removeItem(k);
+      }
+    });
+    // Try again once
+    try {
+      localStorage.setItem(key, value);
+    } catch (e2) {
+      console.error(`Failed to set item "${key}" even after clearing cache`, e2);
+    }
+  }
 }
 
 function LineChart({ data }: { data: number[] }) {
@@ -492,6 +516,7 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [goalComments, setGoalComments] = useState<GoalComment[]>([]);
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [achs, setAchs] = useState<Achievement[]>([]);
   const [rewards, setRewards] = useState<Reward[]>(DEFAULT_REWARDS);
@@ -590,7 +615,7 @@ export default function App() {
             }
         }
 
-        localStorage.setItem('family_goals_migrated', 'true');
+        safeSetItem('family_goals_migrated', 'true');
       } catch (e) {
         console.error('Migration failed', e);
       } finally {
@@ -606,6 +631,7 @@ export default function App() {
       const cachedRewards = localStorage.getItem('cache_rewards');
       const cachedMsgs = localStorage.getItem('cache_msgs');
       const cachedProfiles = localStorage.getItem('cache_profiles');
+      const cachedGoalComments = localStorage.getItem('cache_goal_comments');
 
       if (cachedGoals) {
         setGoals(JSON.parse(cachedGoals));
@@ -619,6 +645,7 @@ export default function App() {
       if (cachedRewards) setRewards(JSON.parse(cachedRewards));
       if (cachedMsgs) setMessages(JSON.parse(cachedMsgs));
       if (cachedProfiles) setProfiles(JSON.parse(cachedProfiles));
+      if (cachedGoalComments) setGoalComments(JSON.parse(cachedGoalComments));
 
       try {
         // Fetch fresh data in background
@@ -628,14 +655,16 @@ export default function App() {
         const rewardsPromise = supabase.from('rewards').select('*');
         const msgsPromise = supabase.from('messages').select('*').order('date', { ascending: false }).limit(50);
         const profilesPromise = supabase.from('profiles').select('*');
+        const goalCommentsPromise = supabase.from('goal_comments').select('*').order('date', { ascending: true });
 
-        const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes] = await Promise.all([
+        const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes, goalCommentsRes] = await Promise.all([
             goalsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             txsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             achsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             rewardsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             msgsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
-            profilesPromise.then(res => res, (e: any) => ({ data: null, error: e }))
+            profilesPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            goalCommentsPromise.then(res => res, (e: any) => ({ data: null, error: e }))
         ]);
 
         if (profilesRes.error && (profilesRes.error as any).code === '42P01') {
@@ -650,13 +679,13 @@ export default function App() {
             priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
           }));
           setGoals(freshGoals);
-          localStorage.setItem('cache_goals', JSON.stringify(freshGoals));
+          safeSetItem('cache_goals', JSON.stringify(freshGoals));
         }
 
         if (txsRes.data) {
           const freshTxs = (txsRes.data as any[]).reverse();
           setTxs(freshTxs);
-          localStorage.setItem('cache_txs', JSON.stringify(freshTxs));
+          safeSetItem('cache_txs', JSON.stringify(freshTxs));
         }
         
         if (achsRes.data) {
@@ -664,7 +693,7 @@ export default function App() {
             id: a.id, member: a.member, achId: a.ach_id, date: a.date
           }));
           setAchs(freshAchs);
-          localStorage.setItem('cache_achs', JSON.stringify(freshAchs));
+          safeSetItem('cache_achs', JSON.stringify(freshAchs));
         }
 
         if (rewardsRes.data && rewardsRes.data.length > 0) {
@@ -673,7 +702,7 @@ export default function App() {
             isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
           }));
           setRewards(freshRewards);
-          localStorage.setItem('cache_rewards', JSON.stringify(freshRewards));
+          safeSetItem('cache_rewards', JSON.stringify(freshRewards));
         }
 
         if (msgsRes.data) {
@@ -688,7 +717,7 @@ export default function App() {
             };
           });
           setMessages(freshMsgs);
-          localStorage.setItem('cache_msgs', JSON.stringify(freshMsgs));
+          safeSetItem('cache_msgs', JSON.stringify(freshMsgs));
         }
 
         if (profilesRes.data && profilesRes.data.length > 0) {
@@ -696,11 +725,19 @@ export default function App() {
                 role: p.role, pin: p.pin, layout_config: p.layout_config || DEFAULT_LAYOUT, avatar_url: p.avatar_url
             }));
             setProfiles(freshProfiles);
-            localStorage.setItem('cache_profiles', JSON.stringify(freshProfiles));
+            safeSetItem('cache_profiles', JSON.stringify(freshProfiles));
         } else if (profilesRes.data && profilesRes.data.length === 0) {
             const initialProfiles = ROLES.map(role => ({ role, pin: '1183' }));
             await supabase.from('profiles').insert(initialProfiles);
             setProfiles(initialProfiles.map(p => ({ ...p, layout_config: DEFAULT_LAYOUT, avatar_url: null })));
+        }
+
+        if (goalCommentsRes.data) {
+          const freshComments = (goalCommentsRes.data as any[]).map(c => ({
+            id: c.id, goal_id: c.goal_id, user: c.user, content: c.content, date: c.date
+          }));
+          setGoalComments(freshComments);
+          safeSetItem('cache_goal_comments', JSON.stringify(freshComments));
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -744,6 +781,19 @@ export default function App() {
           } : p));
         } else if (payload.eventType === 'DELETE') {
           setGoals(prev => prev.filter(p => p.id !== payload.old.id));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'goal_comments' }, payload => {
+        if (payload.eventType === 'INSERT') {
+          const c = payload.new;
+          setGoalComments(prev => {
+            if (prev.some(p => p.id === c.id)) return prev;
+            return [...prev, {
+              id: c.id, goal_id: c.goal_id, user: c.user, content: c.content, date: c.date
+            }];
+          });
+        } else if (payload.eventType === 'DELETE') {
+          setGoalComments(prev => prev.filter(p => p.id !== payload.old.id));
         }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, payload => {
@@ -861,7 +911,7 @@ export default function App() {
     }
   }, [profiles, currentUser]);
 
-  useEffect(() => { if (currentUser) localStorage.setItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
+  useEffect(() => { if (currentUser) safeSetItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
 
   const [filter, setFilter] = useState<FilterType>('全部');
   const [lbTab, setLbTab] = useState<'total' | 'weekly' | 'daily'>('total');
@@ -968,16 +1018,50 @@ export default function App() {
     }
   }, [goals, memberStats]); // Removed txs and achs from dependencies to prevent infinite loop
 
-  const handleAddProgress = async (id: string) => {
+  const handleUpdateProgress = async (id: string, progress: number) => {
     try {
-      const goal = goals.find(g => g.id === id);
-      if (!goal) return;
-      const newProg = Math.min(goal.progress + 10, 99);
-      await supabase.from('goals').update({ progress: newProg }).eq('id', id);
+      await supabase.from('goals').update({ progress }).eq('id', id);
       showToast('进度已更新');
     } catch (e) {
       console.error(e);
       showToast('更新失败，请重试', 'error');
+    }
+  };
+
+  const handleAddGoalComment = async (goalId: string, content: string) => {
+    if (!currentUser) return;
+    try {
+      const newComment = {
+        id: generateId(),
+        goal_id: goalId,
+        user: currentUser,
+        content,
+        date: new Date().toISOString()
+      };
+      await supabase.from('goal_comments').insert(newComment);
+      
+      // Award 1 point, max 10 per day for comments
+      const today = new Date().toISOString().split('T')[0];
+      const dailyPoints = txs
+        .filter(t => t.member === currentUser && t.reason === '任务留言奖励' && t.date.startsWith(today))
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      if (dailyPoints < 10) {
+        await supabase.from('transactions').insert({
+          id: generateId(),
+          member: currentUser,
+          amount: 1,
+          reason: '任务留言奖励',
+          type: 'earned',
+          date: new Date().toISOString()
+        });
+        showToast('留言成功，积分 +1');
+      } else {
+        showToast('留言成功 (今日留言积分已达上限)');
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('留言失败', 'error');
     }
   };
 
@@ -1169,7 +1253,7 @@ export default function App() {
         showToast('本地缓存中没有找到数据', 'error');
       } else {
         showToast(`成功恢复 ${restoredCount} 条记录，页面即将刷新`);
-        localStorage.setItem('family_goals_migrated', 'true');
+        safeSetItem('family_goals_migrated', 'true');
         setTimeout(() => window.location.reload(), 1500);
       }
     } catch (e) {
@@ -1735,13 +1819,15 @@ export default function App() {
                     <GoalCard 
                       key={goal.id} 
                       goal={goal} 
-                      currentUser={currentUser}
+                      currentUser={currentUser || ''}
                       profiles={profiles}
-                      onAddProgress={() => handleAddProgress(goal.id)}
+                      onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
                       onMarkAsDone={() => handleMarkAsDone(goal.id)}
                       onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
                       onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
                       onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
+                      comments={goalComments.filter(c => c.goal_id === goal.id)}
+                      onAddComment={(content) => handleAddGoalComment(goal.id, content)}
                     />
                   ))}
                 </AnimatePresence>
@@ -1805,7 +1891,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">活跃奖励</div>
-                  <div className="font-bold text-stone-700">发送留言 <span className="text-emerald-500">+1</span></div>
+                  <div className="font-bold text-stone-700">发送留言/任务意见 <span className="text-emerald-500">+1</span></div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">基础奖励</div>
@@ -1825,7 +1911,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">积分上限</div>
-                  <div className="font-bold text-red-500">留言积分上限 <span className="text-red-600">10 分/天</span></div>
+                  <div className="font-bold text-red-500">留言/意见积分上限 <span className="text-red-600">10 分/天</span></div>
                 </div>
               </div>
             </div>
@@ -2222,8 +2308,15 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
   );
 }
 
-function GoalCard({ goal, currentUser, profiles, onAddProgress, onMarkAsDone, onConfirm, onEdit, onDelete }: { goal: Goal, currentUser: string, profiles: Profile[], onAddProgress: () => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void }) {
+function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone, onConfirm, onEdit, onDelete, comments, onAddComment }: { goal: Goal, currentUser: string, profiles: Profile[], onUpdateProgress: (val: number) => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void, comments: GoalComment[], onAddComment: (content: string) => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [commentInput, setCommentInput] = useState('');
+  const [localProgress, setLocalProgress] = useState(goal.progress);
+
+  useEffect(() => {
+    setLocalProgress(goal.progress);
+  }, [goal.progress]);
+
   const isCompleted = goal.progress >= 100 && goal.completedAt !== undefined;
   const isPendingConfirmation = goal.progress >= 99 && !goal.completedAt;
   
@@ -2349,16 +2442,26 @@ function GoalCard({ goal, currentUser, profiles, onAddProgress, onMarkAsDone, on
                 {!isCompleted && (
                   <>
                     {goal.progress < 99 && canAddProgress && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); onAddProgress(); }}
-                          className="py-2 bg-white border border-stone-200 hover:border-orange-300 hover:text-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" /> 进度+10%
-                        </button>
+                      <div className="space-y-4">
+                        <div className="space-y-2 py-2">
+                          <div className="flex justify-between text-xs font-medium text-stone-500">
+                            <span>调整进度</span>
+                            <span>{localProgress}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="99" 
+                            value={localProgress} 
+                            onChange={(e) => setLocalProgress(parseInt(e.target.value))}
+                            onMouseUp={() => onUpdateProgress(localProgress)}
+                            onTouchEnd={() => onUpdateProgress(localProgress)}
+                            className="w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                          />
+                        </div>
                         <button 
                           onClick={(e) => { e.stopPropagation(); onMarkAsDone(); }}
-                          className="py-2 bg-orange-500 text-white hover:bg-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                          className="w-full py-2 bg-orange-500 text-white hover:bg-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                         >
                           <CheckCircle2 className="w-4 h-4" /> 确认完成
                         </button>
@@ -2389,6 +2492,46 @@ function GoalCard({ goal, currentUser, profiles, onAddProgress, onMarkAsDone, on
                   </>
                 )}
                 
+                {/* Comments Section */}
+                <div className="mt-4 border-t border-stone-100 pt-4">
+                  <h4 className="text-xs font-bold text-stone-400 uppercase mb-3 flex items-center gap-2">
+                    <FileText className="w-3 h-3" /> 任务讨论
+                  </h4>
+                  <div className="space-y-3 max-h-40 overflow-y-auto mb-3 pr-1">
+                    {comments.length === 0 ? (
+                      <p className="text-[10px] text-stone-400 text-center py-2">暂无留言</p>
+                    ) : (
+                      comments.map(c => (
+                        <div key={c.id} className="flex gap-2">
+                          <UserAvatar role={c.user} profiles={profiles} className="w-5 h-5 shrink-0" />
+                          <div className="flex-grow">
+                            <div className="flex justify-between items-center mb-0.5">
+                              <span className="text-[10px] font-bold text-stone-600">{c.user}</span>
+                              <span className="text-[8px] text-stone-400">{new Date(c.date).toLocaleDateString()}</span>
+                            </div>
+                            <p className="text-xs text-stone-700 bg-stone-50 p-2 rounded-lg">{c.content}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                      value={commentInput}
+                      onChange={e => setCommentInput(e.target.value)}
+                      placeholder="发表意见..."
+                      className="flex-grow px-3 py-1.5 bg-stone-100 rounded-lg text-xs outline-none focus:ring-1 focus:ring-orange-500"
+                    />
+                    <button 
+                      onClick={() => { if(commentInput.trim()) { onAddComment(commentInput); setCommentInput(''); } }}
+                      disabled={!commentInput.trim()}
+                      className="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold disabled:opacity-50 cursor-pointer"
+                    >
+                      发送
+                    </button>
+                  </div>
+                </div>
+
                 {canEdit && (
                   <div className="flex gap-2 pt-2 border-t border-stone-100 mt-2 justify-end">
                     <button 

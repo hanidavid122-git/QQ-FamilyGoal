@@ -58,6 +58,14 @@ export type Profile = {
   avatar_url?: string;
 };
 
+export type GoalComment = {
+  id: string;
+  goal_id: string;
+  user: string;
+  content: string;
+  date: string;
+};
+
 export type Message = {
   id: string;
   user: string;
