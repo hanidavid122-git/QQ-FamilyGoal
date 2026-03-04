@@ -14,6 +14,7 @@ export type Goal = {
   priority: Priority;
   completedAt?: string;
   confirmations?: Record<string, boolean>;
+  type: 'personal' | 'family';
 };
 
 export type Transaction = {
@@ -22,7 +23,7 @@ export type Transaction = {
   member: string;
   amount: number;
   reason: string;
-  type: 'earned' | 'redeemed' | 'earn' | 'redeem';
+  type: 'earned' | 'redeemed' | 'earn' | 'redeem' | 'milestone_claimed';
 };
 
 export type Achievement = {
@@ -40,6 +41,8 @@ export type Reward = {
   isActive: boolean;
   isCustom: boolean;
   iconName?: string;
+  targetType: 'personal' | 'family';
+  role?: string; // Optional: specify which role this reward belongs to
 };
 
 export type FilterType = '全部' | '规划中' | '进行中' | '待确认' | '已完成';

@@ -36,11 +36,11 @@ export const ICONS: Record<string, React.ElementType> = {
 };
 
 export const DEFAULT_REWARDS: Reward[] = [
-  { id: 'r1', name: '选择家庭电影', cost: 100, isActive: true, isCustom: false, iconName: 'Film' },
-  { id: 'r2', name: '免做家务一天', cost: 200, isActive: true, isCustom: false, iconName: 'Target' },
-  { id: 'r3', name: '自选家庭出游', cost: 300, isActive: true, isCustom: false, iconName: 'Car' },
-  { id: 'r4', name: '获得新玩具', cost: 150, isActive: true, isCustom: false, iconName: 'Gamepad' },
-  { id: 'r5', name: '选择周末大餐', cost: 250, isActive: true, isCustom: false, iconName: 'Utensils' },
+  { id: 'r1', name: '选择家庭电影', cost: 100, isActive: true, isCustom: false, iconName: 'Film', targetType: 'personal' },
+  { id: 'r2', name: '免做家务一天', cost: 200, isActive: true, isCustom: false, iconName: 'Target', targetType: 'personal' },
+  { id: 'r3', name: '自选家庭出游', cost: 1000, isActive: true, isCustom: false, iconName: 'Car', targetType: 'family' },
+  { id: 'r4', name: '获得新玩具', cost: 150, isActive: true, isCustom: false, iconName: 'Gamepad', targetType: 'personal' },
+  { id: 'r5', name: '选择周末大餐', cost: 500, isActive: true, isCustom: false, iconName: 'Utensils', targetType: 'family' },
 ];
 
 export const AVATARS = [

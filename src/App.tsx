@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { 
-  Plus, Edit2, Trash2, CheckCircle, Clock, Users, 
+  Plus, Edit2, Trash2, CheckCircle, Clock, Users, User,
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
@@ -135,7 +135,8 @@ function LineChart({ data }: { data: number[] }) {
 
 const MESSAGES_KEY = 'family_goals_messages';
 
-function FamilyHero({ familyPts }: { familyPts: number }) {
+function FamilyHero({ familyPts, nextMilestone, nextRewardName }: { familyPts: number, nextMilestone: number, nextRewardName: string }) {
+  const progress = Math.min(100, (familyPts / nextMilestone) * 100);
   return (
     <div className="bg-gradient-to-br from-orange-400 to-red-500 rounded-[2rem] p-8 text-white shadow-xl mb-8 relative overflow-hidden">
       <div className="absolute top-0 right-0 opacity-10 transform translate-x-1/4 -translate-y-1/4">
@@ -152,11 +153,13 @@ function FamilyHero({ familyPts }: { familyPts: number }) {
         <div className="w-full max-w-md bg-black/20 h-3 rounded-full overflow-hidden backdrop-blur-sm mb-2">
           <div 
             className="h-full bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-1000"
-            style={{ width: `${(familyPts % 1000) / 10}%` }}
+            style={{ width: `${progress}%` }}
           />
         </div>
         <p className="text-sm text-white/80 font-medium">
-          距离下一个家庭大奖还差 {1000 - (familyPts % 1000)} 分
+          {familyPts >= nextMilestone 
+            ? `已达成里程碑！快去兑换 ${nextRewardName}` 
+            : `距离下一个家庭大奖 [${nextRewardName}] 还差 ${nextMilestone - familyPts} 分`}
         </p>
       </div>
     </div>
@@ -165,7 +168,7 @@ function FamilyHero({ familyPts }: { familyPts: number }) {
 
 
 
-function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats }: { messages: Message[], onSend: (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => void, currentUser: string | null, profiles: Profile[], memberStats: any[] }) {
+function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, isAdmin, onClearAll, onDeleteMessage, onToggleBullet, isBulletEnabled }: { messages: Message[], onSend: (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => void, currentUser: string | null, profiles: Profile[], memberStats: any[], isAdmin: boolean, onClearAll?: () => void, onDeleteMessage?: (id: string) => void, onToggleBullet?: () => void, isBulletEnabled: boolean }) {
   const [input, setInput] = useState('');
   const [selectedColor, setSelectedColor] = useState(MESSAGE_COLORS[0]);
   const [selectedFontSize, setSelectedFontSize] = useState('0.9rem');
@@ -173,6 +176,13 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats }: 
   const [selectedEffect, setSelectedEffect] = useState('default');
   const [selectedDuration, setSelectedDuration] = useState(24 * 60 * 60 * 1000);
   const [showPicker, setShowPicker] = useState(false);
+
+  // Stats
+  const totalMessages = messages.length;
+  const activeMessages = messages.filter(msg => {
+    if (!msg.duration || msg.duration === -1) return true;
+    return (new Date(msg.date).getTime() + msg.duration) > Date.now();
+  }).length;
 
   // Find the leader based on current points
   const leader = memberStats.length > 0 ? [...memberStats].sort((a, b) => b.pts - a.pts)[0] : null;
@@ -189,12 +199,42 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats }: 
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-4 px-2">
-        <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-blue-500" />
-          留言板 & 积分排行
-        </h2>
-        <div className="text-[10px] font-medium text-stone-400 bg-stone-100 px-2 py-0.5 rounded-full">
-          实时同步中
+        <div className="flex flex-col">
+          <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-blue-500" />
+            留言板 & 积分排行
+          </h2>
+          <div className="flex items-center gap-3 mt-1">
+            <div className="text-[10px] font-medium text-stone-400">
+              历史弹幕: <span className="text-stone-600 font-bold">{totalMessages}</span>
+            </div>
+            <div className="text-[10px] font-medium text-stone-400">
+              活跃弹幕: <span className="text-blue-500 font-bold">{activeMessages}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <div className="flex items-center gap-1 mr-2">
+              <button 
+                onClick={() => onToggleBullet?.()}
+                className={`p-1.5 rounded-lg transition-colors ${isBulletEnabled ? 'bg-blue-50 text-blue-600' : 'bg-stone-100 text-stone-400'}`}
+                title={isBulletEnabled ? '关闭弹幕' : '开启弹幕'}
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => { if(window.confirm('确定清空所有弹幕吗？')) onClearAll?.(); }}
+                className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                title="清空弹幕"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <div className="text-[10px] font-medium text-stone-400 bg-stone-100 px-2 py-0.5 rounded-full">
+            实时同步中
+          </div>
         </div>
       </div>
       <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-64 mb-4 border border-stone-100">
@@ -250,7 +290,7 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats }: 
 
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
-            {messages.filter(msg => {
+            {isBulletEnabled && messages.filter(msg => {
               if (!msg.duration || msg.duration === -1) return true;
               return (new Date(msg.date).getTime() + msg.duration) > Date.now();
             }).slice(-20).map((msg, i) => {
@@ -322,6 +362,14 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats }: 
                   <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
                     {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
                   </span>
+                  {isAdmin && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
+                      className="text-stone-300 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </motion.div>
               );
@@ -676,7 +724,8 @@ export default function App() {
             id: g.id, name: g.name, description: g.description, startDate: g.start_date,
             endDate: g.end_date, progress: g.progress, creator: g.creator,
             assignees: g.assignees, assignee: g.assignee, signature: g.signature,
-            priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
+            priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations,
+            type: g.type || 'family'
           }));
           setGoals(freshGoals);
           safeSetItem('cache_goals', JSON.stringify(freshGoals));
@@ -699,7 +748,8 @@ export default function App() {
         if (rewardsRes.data && rewardsRes.data.length > 0) {
           const freshRewards = (rewardsRes.data as any[]).map(r => ({
             id: r.id, name: r.name, cost: r.cost, description: r.description,
-            isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
+            isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name,
+            targetType: r.target_type || 'personal'
           }));
           setRewards(freshRewards);
           safeSetItem('cache_rewards', JSON.stringify(freshRewards));
@@ -768,7 +818,8 @@ export default function App() {
               id: g.id, name: g.name, description: g.description, startDate: g.start_date,
               endDate: g.end_date, progress: g.progress, creator: g.creator,
               assignees: g.assignees, assignee: g.assignee, signature: g.signature,
-              priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
+              priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations,
+              type: g.type || 'family'
             }];
           });
         } else if (payload.eventType === 'UPDATE') {
@@ -777,7 +828,8 @@ export default function App() {
             id: g.id, name: g.name, description: g.description, startDate: g.start_date,
             endDate: g.end_date, progress: g.progress, creator: g.creator,
             assignees: g.assignees, assignee: g.assignee, signature: g.signature,
-            priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations
+            priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations,
+            type: g.type || 'family'
           } : p));
         } else if (payload.eventType === 'DELETE') {
           setGoals(prev => prev.filter(p => p.id !== payload.old.id));
@@ -819,14 +871,16 @@ export default function App() {
             if (prev.some(p => p.id === r.id)) return prev;
             return [...prev, {
               id: r.id, name: r.name, cost: r.cost, description: r.description,
-              isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name
+              isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name,
+              targetType: r.target_type || 'personal'
             }];
           });
         } else if (payload.eventType === 'UPDATE') {
           const r = payload.new;
           setRewards(prev => prev.map(p => p.id === r.id ? {
             id: r.id, name: r.name, cost: r.cost, description: r.description,
-            isActive: r.is_active, isCustom: r.is_custom, icon_name: r.icon_name
+            isActive: r.is_active, isCustom: r.is_custom, iconName: r.icon_name,
+            targetType: r.target_type || 'personal'
           } : p));
         } else if (payload.eventType === 'DELETE') {
           setRewards(prev => prev.filter(p => p.id !== payload.old.id));
@@ -975,7 +1029,18 @@ export default function App() {
     });
   }, [goals, txs]);
 
-  const familyPts = memberStats.reduce((s, m) => s + m.pts, 0);
+  const familyStats = useMemo(() => {
+    const totalEarned = txs.filter(t => t.type === 'earned' || t.type === 'earn').reduce((sum, t) => sum + t.amount, 0);
+    const totalRedeemed = txs.filter(t => t.member === '家庭' && (t.type === 'redeemed' || t.type === 'redeem')).reduce((sum, t) => sum + t.amount, 0);
+    return { earned: totalEarned, redeemed: totalRedeemed, pts: totalEarned - totalRedeemed };
+  }, [txs]);
+
+  const nextFamilyReward = useMemo(() => {
+    const familyRewards = rewards.filter(r => r.isActive && r.targetType === 'family').sort((a, b) => a.cost - b.cost);
+    const next = familyRewards.find(r => r.cost > familyStats.pts);
+    return next || familyRewards[familyRewards.length - 1] || { cost: 1000, name: '神秘大奖' };
+  }, [rewards, familyStats.pts]);
+
   const topGoals = [...goals].filter(g => g.progress < 100).sort((a, b) => getGoalScore(b) - getGoalScore(a)).slice(0, 5);
 
   // --- New Components moved outside ---
@@ -1123,23 +1188,50 @@ export default function App() {
 
   const handleRedeem = async (member: string, reward: Reward) => {
     try {
-      const stats = memberStats.find(m => m.role === member);
-      if (stats && stats.pts >= reward.cost) {
-        const newTx = { 
-          id: generateId(),
-          member, 
-          amount: reward.cost, 
-          reason: `兑换奖励: ${reward.name}`, 
-          type: 'redeemed' 
-        };
-        await supabase.from('transactions').insert(newTx);
-        showToast(`成功兑换：${reward.name}`);
+      // Check if already claimed this milestone
+      const alreadyClaimed = txs.some(t => t.member === member && t.reason.includes(reward.name) && t.type === 'milestone_claimed');
+      if (alreadyClaimed) {
+        showToast('该奖励已领取过', 'error');
+        return;
+      }
+
+      const memberPts = memberStats.find(m => m.role === member)?.pts || 0;
+      const familyPts = familyStats.pts;
+
+      if (reward.targetType === 'family') {
+        if (familyPts >= reward.cost) {
+          const newTx = { 
+            id: generateId(),
+            member: '家庭', 
+            amount: 0, // Milestone rewards don't deduct points
+            reason: `全家里程碑达成: ${reward.name}`, 
+            type: 'milestone_claimed',
+            date: new Date().toISOString()
+          };
+          await supabase.from('transactions').insert(newTx);
+          showToast(`全家达成里程碑: ${reward.name}！`);
+        } else {
+          showToast(`全家总积分不足 (当前: ${familyPts}/${reward.cost})`, 'error');
+        }
       } else {
-        showToast('积分不足', 'error');
+        if (memberPts >= reward.cost) {
+          const newTx = { 
+            id: generateId(),
+            member: member, 
+            amount: 0, // Milestone rewards don't deduct points
+            reason: `个人里程碑达成: ${reward.name}`, 
+            type: 'milestone_claimed',
+            date: new Date().toISOString()
+          };
+          await supabase.from('transactions').insert(newTx);
+          showToast(`恭喜获得个人奖励: ${reward.name}！`);
+        } else {
+          showToast(`个人积分不足 (当前: ${memberPts}/${reward.cost})`, 'error');
+        }
       }
     } catch (e) {
       console.error(e);
-      showToast('兑换失败，请重试', 'error');
+      showToast('领取失败，请重试', 'error');
     }
   };
 
@@ -1168,7 +1260,8 @@ export default function App() {
         assignee: goalData.assignee,
         signature: goalData.signature,
         priority: goalData.priority,
-        confirmations: goalData.confirmations || {}
+        confirmations: goalData.confirmations || {},
+        type: goalData.type || (goalData.assignees.length > 1 ? 'family' : 'personal')
       };
 
       if (editingGoal) {
@@ -1242,7 +1335,8 @@ export default function App() {
       if (localRewards && localRewards.length > 0) {
         const mappedRewards = localRewards.map((r: any) => ({
           id: r.id, name: r.name, cost: r.cost, description: r.description,
-          is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName
+          is_active: r.isActive, is_custom: r.isCustom, icon_name: r.iconName,
+          target_type: r.targetType || 'personal'
         }));
         const { error } = await supabase.from('rewards').upsert(mappedRewards, { onConflict: 'id' });
         if (error) throw error;
@@ -1337,7 +1431,9 @@ export default function App() {
       description: rewardData.description,
       is_active: rewardData.isActive,
       is_custom: rewardData.isCustom,
-      icon_name: rewardData.iconName
+      icon_name: rewardData.iconName,
+      target_type: rewardData.targetType,
+      role: rewardData.role
     };
 
     if (editingReward) {
@@ -1423,6 +1519,30 @@ export default function App() {
     }
   };
 
+  const handleClearAllMessages = async () => {
+    try {
+      const { error } = await supabase.from('messages').delete().neq('id', '0');
+      if (error) throw error;
+      showToast('所有弹幕已清空');
+    } catch (e) {
+      console.error(e);
+      showToast('清空失败', 'error');
+    }
+  };
+
+  const handleDeleteMessage = async (id: string) => {
+    try {
+      const { error } = await supabase.from('messages').delete().eq('id', id);
+      if (error) throw error;
+      showToast('弹幕已删除');
+    } catch (e) {
+      console.error(e);
+      showToast('删除失败', 'error');
+    }
+  };
+
+  const [isBulletEnabled, setIsBulletEnabled] = useState(true);
+
   const handleUpdateProfilePin = async (role: string, newPin: string) => {
     const { error } = await supabase
       .from('profiles')
@@ -1433,6 +1553,7 @@ export default function App() {
       console.error('Error updating PIN:', error);
       showToast('更新PIN码失败', 'error');
     } else {
+      setProfiles(prev => prev.map(p => p.role === role ? { ...p, pin: newPin } : p));
       showToast(`${role} 的PIN码已更新`);
     }
   };
@@ -1734,10 +1855,21 @@ export default function App() {
         <main className="max-w-5xl mx-auto px-4 pb-24 space-y-8">
           
           {/* 1. Family Hero Section (Total Points) */}
-          <FamilyHero familyPts={familyPts} />
+          <FamilyHero familyPts={familyStats.pts} nextMilestone={nextFamilyReward.cost} nextRewardName={nextFamilyReward.name} />
 
           {/* 2. Danmaku Board with Integrated Race Chart */}
-          <DanmakuBoard messages={messages} onSend={handleAddMessage} currentUser={currentUser} profiles={profiles} memberStats={memberStats} />
+          <DanmakuBoard 
+            messages={messages} 
+            onSend={handleAddMessage} 
+            currentUser={currentUser} 
+            profiles={profiles} 
+            memberStats={memberStats} 
+            isAdmin={isAdmin}
+            onClearAll={handleClearAllMessages}
+            onDeleteMessage={handleDeleteMessage}
+            onToggleBullet={() => setIsBulletEnabled(!isBulletEnabled)}
+            isBulletEnabled={isBulletEnabled}
+          />
 
           {/* 3. Personal Dashboard (If logged in) */}
           {currentUser && (
@@ -1783,7 +1915,7 @@ export default function App() {
                 onClick={() => { setEditingGoal(null); setIsModalOpen(true); }}
                 className="bg-stone-900 hover:bg-stone-800 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-stone-200 transition-all flex items-center gap-2 text-sm"
               >
-                <Plus className="w-4 h-4" /> 新建任务
+                <Plus className="w-4 h-4" /> 新建目标
               </button>
             </div>
 
@@ -1813,35 +1945,76 @@ export default function App() {
                 <p className="text-stone-500 font-medium">暂无相关任务</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <AnimatePresence mode="popLayout">
-                  {filteredGoals.map(goal => (
-                    <GoalCard 
-                      key={goal.id} 
-                      goal={goal} 
-                      currentUser={currentUser || ''}
-                      profiles={profiles}
-                      onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
-                      onMarkAsDone={() => handleMarkAsDone(goal.id)}
-                      onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
-                      onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
-                      onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
-                      comments={goalComments.filter(c => c.goal_id === goal.id)}
-                      onAddComment={(content) => handleAddGoalComment(goal.id, content)}
-                    />
-                  ))}
-                </AnimatePresence>
+              <div className="space-y-8">
+                {/* Personal Goals First */}
+                {filteredGoals.filter(g => g.type === 'personal').length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                      <User className="w-4 h-4" /> 个人目标
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <AnimatePresence mode="popLayout">
+                        {filteredGoals.filter(g => g.type === 'personal').map(goal => (
+                          <GoalCard 
+                            key={goal.id} 
+                            goal={goal} 
+                            currentUser={currentUser || ''}
+                            profiles={profiles}
+                            onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
+                            onMarkAsDone={() => handleMarkAsDone(goal.id)}
+                            onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
+                            onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
+                            onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
+                            comments={goalComments.filter(c => c.goal_id === goal.id)}
+                            onAddComment={(content) => handleAddGoalComment(goal.id, content)}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                )}
+
+                {/* Family Goals */}
+                {filteredGoals.filter(g => g.type === 'family' || !g.type).length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                      <Users className="w-4 h-4" /> 家庭目标
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <AnimatePresence mode="popLayout">
+                        {filteredGoals.filter(g => g.type === 'family' || !g.type).map(goal => (
+                          <GoalCard 
+                            key={goal.id} 
+                            goal={goal} 
+                            currentUser={currentUser || ''}
+                            profiles={profiles}
+                            onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
+                            onMarkAsDone={() => handleMarkAsDone(goal.id)}
+                            onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
+                            onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
+                            onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
+                            comments={goalComments.filter(c => c.goal_id === goal.id)}
+                            onAddComment={(content) => handleAddGoalComment(goal.id, content)}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* 6. Rewards Section (Moved to bottom) */}
+          {/* 6. Rewards Section (Milestone Style) */}
           <div className="bg-white rounded-[2.5rem] p-6 sm:p-8 shadow-sm border border-stone-100">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
-                <Gift className="w-7 h-7 text-pink-500" />
-                积分兑换
-              </h2>
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
+                  <Gift className="w-7 h-7 text-pink-500" />
+                  积分里程碑
+                </h2>
+                <p className="text-sm text-stone-400 mt-1">达成积分目标，解锁家庭惊喜</p>
+              </div>
               {isAdmin && (
                 <button 
                   onClick={() => setIsRewardModalOpen(true)}
@@ -1852,28 +2025,168 @@ export default function App() {
               )}
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {rewards.filter(r => r.isActive).map(reward => (
-                <div key={reward.id} className="bg-stone-50 rounded-2xl p-5 border border-stone-100 hover:border-pink-200 hover:shadow-md transition-all group">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-pink-500 shadow-sm">
-                      {ICONS[reward.iconName || 'Gift'] ? React.createElement(ICONS[reward.iconName || 'Gift'], { className: "w-5 h-5" }) : <Gift className="w-5 h-5" />}
+            <div className="space-y-12">
+              {/* Personal Milestone Tracks */}
+              {isAdmin ? (
+                // Admin sees everyone's tracks
+                ROLES.filter(r => r !== '管理员').map(role => {
+                  const mStats = memberStats.find(m => m.role === role);
+                  const pts = mStats?.pts || 0;
+                  const roleRewards = rewards.filter(r => r.isActive && r.targetType === 'personal' && (!r.role || r.role === role));
+                  if (roleRewards.length === 0) return null;
+
+                  return (
+                    <div key={role} className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                          <UserAvatar role={role} profiles={profiles} className="w-6 h-6" />
+                          {role} 的里程碑
+                        </h3>
+                        <div className="text-sm font-bold text-emerald-500">
+                          当前积分: {pts}
+                        </div>
+                      </div>
+                      <div className="relative pt-8 pb-4 px-4 bg-emerald-50 rounded-3xl border border-emerald-100">
+                        <div className="absolute top-1/2 left-4 right-4 h-2 bg-emerald-200 -translate-y-1/2 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.min(100, (pts / Math.max(...roleRewards.map(r => r.cost), 1)) * 100)}%` }}
+                            className="h-full bg-emerald-500"
+                          />
+                        </div>
+                        <div className="relative flex justify-between items-center">
+                          {roleRewards.sort((a, b) => a.cost - b.cost).map(reward => {
+                            const isReached = pts >= reward.cost;
+                            const isClaimed = txs.some(t => t.member === role && t.reason.includes(reward.name) && t.type === 'milestone_claimed');
+                            return (
+                              <div key={reward.id} className="flex flex-col items-center gap-2 relative z-10">
+                                <button 
+                                  onClick={() => handleRedeem(role, reward)}
+                                  disabled={!isReached || isClaimed}
+                                  className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
+                                    isClaimed
+                                      ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                                      : isReached 
+                                        ? 'bg-white text-emerald-500 hover:scale-110 cursor-pointer' 
+                                        : 'bg-emerald-200 text-emerald-400 cursor-not-allowed'
+                                  }`}
+                                >
+                                  {isClaimed ? <CheckCircle2 className="w-6 h-6" /> : (ICONS[reward.iconName || 'Gift'] ? React.createElement(ICONS[reward.iconName || 'Gift'], { className: "w-6 h-6" }) : <Gift className="w-6 h-6" />)}
+                                </button>
+                                <div className="text-center">
+                                  <div className={`text-[10px] font-bold ${isReached ? 'text-emerald-500' : 'text-emerald-400'}`}>{reward.cost} 分</div>
+                                  <div className="text-[10px] text-stone-600 font-medium max-w-[60px] truncate">{reward.name}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                    <div className="bg-pink-100 text-pink-600 px-2 py-1 rounded-lg text-xs font-bold">
-                      {reward.cost} 分
+                  );
+                })
+              ) : (
+                // Members see only their own track
+                currentUser && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                        <User className="w-6 h-6 text-emerald-500" />
+                        我的里程碑
+                      </h3>
+                      <div className="text-sm font-bold text-emerald-500">
+                        我的积分: {memberStats.find(m => m.role === currentUser)?.pts || 0}
+                      </div>
+                    </div>
+                    <div className="relative pt-8 pb-4 px-4 bg-emerald-50 rounded-3xl border border-emerald-100">
+                      <div className="absolute top-1/2 left-4 right-4 h-2 bg-emerald-200 -translate-y-1/2 rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, ((memberStats.find(m => m.role === currentUser)?.pts || 0) / Math.max(...rewards.filter(r => r.targetType === 'personal' && (!r.role || r.role === currentUser)).map(r => r.cost), 1)) * 100)}%` }}
+                          className="h-full bg-emerald-500"
+                        />
+                      </div>
+                      <div className="relative flex justify-between items-center">
+                        {rewards.filter(r => r.isActive && r.targetType === 'personal' && (!r.role || r.role === currentUser)).sort((a, b) => a.cost - b.cost).map(reward => {
+                          const pts = memberStats.find(m => m.role === currentUser)?.pts || 0;
+                          const isReached = pts >= reward.cost;
+                          const isClaimed = txs.some(t => t.member === currentUser && t.reason.includes(reward.name) && t.type === 'milestone_claimed');
+                          return (
+                            <div key={reward.id} className="flex flex-col items-center gap-2 relative z-10">
+                              <button 
+                                onClick={() => handleRedeem(currentUser, reward)}
+                                disabled={!isReached || isClaimed}
+                                className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
+                                  isClaimed
+                                    ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                                    : isReached 
+                                      ? 'bg-white text-emerald-500 hover:scale-110 cursor-pointer' 
+                                      : 'bg-emerald-200 text-emerald-400 cursor-not-allowed'
+                                }`}
+                              >
+                                {isClaimed ? <CheckCircle2 className="w-6 h-6" /> : (ICONS[reward.iconName || 'Gift'] ? React.createElement(ICONS[reward.iconName || 'Gift'], { className: "w-6 h-6" }) : <Gift className="w-6 h-6" />)}
+                              </button>
+                              <div className="text-center">
+                                <div className={`text-[10px] font-bold ${isReached ? 'text-emerald-500' : 'text-emerald-400'}`}>{reward.cost} 分</div>
+                                <div className="text-[10px] text-stone-600 font-medium max-w-[60px] truncate">{reward.name}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                  <h3 className="font-bold text-stone-900 mb-1">{reward.name}</h3>
-                  <p className="text-xs text-stone-500 mb-4 h-8 line-clamp-2">{reward.description || '暂无描述'}</p>
-                  <button 
-                    onClick={() => handleRedeem(currentUser || '爸爸', reward)}
-                    disabled={!currentUser}
-                    className="w-full py-2 bg-white border border-stone-200 text-stone-600 rounded-xl text-sm font-bold hover:bg-pink-500 hover:text-white hover:border-pink-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    立即兑换
-                  </button>
+                )
+              )}
+
+              {/* Family Milestone Track */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-stone-800 flex items-center gap-2">
+                    <Users className="w-6 h-6 text-indigo-500" />
+                    全家里程碑
+                  </h3>
+                  <div className="text-sm font-bold text-indigo-500">
+                    全家总分: {familyStats.pts}
+                  </div>
                 </div>
-              ))}
+                <div className="relative pt-8 pb-4 px-4 bg-indigo-50 rounded-3xl border border-indigo-100">
+                  <div className="absolute top-1/2 left-4 right-4 h-2 bg-indigo-200 -translate-y-1/2 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(100, (familyStats.pts / Math.max(...rewards.filter(r => r.targetType === 'family').map(r => r.cost), 1)) * 100)}%` }}
+                      className="h-full bg-indigo-500"
+                    />
+                  </div>
+                  <div className="relative flex justify-between items-center">
+                    {rewards.filter(r => r.isActive && r.targetType === 'family').sort((a, b) => a.cost - b.cost).map(reward => {
+                      const isReached = familyStats.pts >= reward.cost;
+                      const isClaimed = txs.some(t => t.member === '家庭' && t.reason.includes(reward.name) && t.type === 'milestone_claimed');
+                      return (
+                        <div key={reward.id} className="flex flex-col items-center gap-2 relative z-10">
+                          <button 
+                            onClick={() => handleRedeem(currentUser || '爸爸', reward)}
+                            disabled={!currentUser || !isReached || isClaimed}
+                            className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
+                              isClaimed
+                                ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                                : isReached 
+                                  ? 'bg-white text-indigo-500 hover:scale-110 cursor-pointer' 
+                                  : 'bg-indigo-200 text-indigo-400 cursor-not-allowed'
+                            }`}
+                          >
+                            {isClaimed ? <CheckCircle2 className="w-6 h-6" /> : (ICONS[reward.iconName || 'Gift'] ? React.createElement(ICONS[reward.iconName || 'Gift'], { className: "w-6 h-6" }) : <Gift className="w-6 h-6" />)}
+                          </button>
+                          <div className="text-center">
+                            <div className={`text-[10px] font-bold ${isReached ? 'text-indigo-500' : 'text-indigo-400'}`}>{reward.cost} 分</div>
+                            <div className="text-[10px] text-stone-600 font-medium max-w-[60px] truncate">{reward.name}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2013,11 +2326,12 @@ export default function App() {
         {isMessageBoardOpen && (
           <MessageBoardModal
             messages={messages}
-            currentUser={currentUser}
+            currentUser={currentUser || ''}
             profiles={profiles}
             onClose={() => setIsMessageBoardOpen(false)}
             onSend={handleAddMessage}
             onLike={handleLikeMessage}
+            onDelete={handleDeleteMessage}
           />
         )}
       </AnimatePresence>
@@ -2025,9 +2339,10 @@ export default function App() {
   );
 }
 
-function MessageBoardModal({ messages, currentUser, profiles, onClose, onSend, onLike }: { messages: Message[], currentUser: string, profiles: Profile[], onClose: () => void, onSend: (content: string) => void, onLike: (id: string) => void }) {
+function MessageBoardModal({ messages, currentUser, profiles, onClose, onSend, onLike, onDelete }: { messages: Message[], currentUser: string, profiles: Profile[], onClose: () => void, onSend: (content: string) => void, onLike: (id: string) => void, onDelete?: (id: string) => void }) {
   const [content, setContent] = useState('');
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const isAdmin = currentUser === '管理员';
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -2064,12 +2379,22 @@ function MessageBoardModal({ messages, currentUser, profiles, onClose, onSend, o
                   </div>
                   <div className={`p-3 rounded-2xl max-w-[80%] text-sm relative group ${isMe ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-white border border-stone-200 text-stone-800 rounded-tl-none'}`}>
                     {msg.content}
-                    <button 
-                      onClick={() => onLike(msg.id)}
-                      className={`absolute -bottom-3 ${isMe ? '-left-8' : '-right-8'} bg-white border border-stone-100 shadow-sm rounded-full px-1.5 py-0.5 text-[10px] flex items-center gap-0.5 text-stone-500 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100`}
-                    >
-                      <Heart className={`w-3 h-3 ${msg.likes > 0 ? 'fill-red-500 text-red-500' : ''}`} /> {msg.likes}
-                    </button>
+                    <div className={`absolute -bottom-3 ${isMe ? '-left-12' : '-right-12'} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                      <button 
+                        onClick={() => onLike(msg.id)}
+                        className="bg-white border border-stone-100 shadow-sm rounded-full px-1.5 py-0.5 text-[10px] flex items-center gap-0.5 text-stone-500 hover:text-red-500 transition-colors"
+                      >
+                        <Heart className={`w-3 h-3 ${msg.likes > 0 ? 'fill-red-500 text-red-500' : ''}`} /> {msg.likes}
+                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => onDelete?.(msg.id)}
+                          className="bg-white border border-stone-100 shadow-sm rounded-full p-1 text-stone-400 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -2222,6 +2547,9 @@ function RewardManagementModal({ rewards, onClose, onToggleActive, onDelete, onE
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${reward.isCustom ? 'bg-purple-100 text-purple-700' : 'bg-stone-200 text-stone-700'}`}>
                     {reward.isCustom ? '自定义' : '默认'}
                   </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${reward.targetType === 'family' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'}`}>
+                    {reward.targetType === 'family' ? '家庭' : '个人'}
+                  </span>
                   {!reward.isActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700">已停用</span>}
                 </div>
                 <p className="text-sm text-stone-500 mt-1">消耗: {reward.cost} 积分</p>
@@ -2268,6 +2596,8 @@ function RewardEditModal({ reward, onClose, onSave }: { reward: Reward | null, o
             name: formData.get('name') as string,
             cost: parseInt(formData.get('cost') as string, 10),
             description: formData.get('description') as string,
+            targetType: formData.get('targetType') as 'personal' | 'family',
+            role: formData.get('role') as string || undefined,
           });
         }}>
           <div className="space-y-4">
@@ -2276,7 +2606,23 @@ function RewardEditModal({ reward, onClose, onSave }: { reward: Reward | null, o
               <input name="name" defaultValue={reward?.name} required className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="例如：全家看电影" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">消耗积分</label>
+              <label className="block text-sm font-medium text-stone-700 mb-1">奖励类型</label>
+              <select name="targetType" defaultValue={reward?.targetType || 'personal'} className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
+                <option value="personal">个人奖励 (里程碑)</option>
+                <option value="family">家庭奖励 (里程碑)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">适用角色 (仅个人奖励有效)</label>
+              <select name="role" defaultValue={reward?.role || ''} className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
+                <option value="">所有人</option>
+                {ROLES.filter(r => r !== '管理员').map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">里程碑积分</label>
               <input name="cost" type="number" min="1" defaultValue={reward?.cost || 50} required className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" />
             </div>
             <div>
@@ -2560,6 +2906,7 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
 function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, currentUser: string, onClose: () => void, onSave: (g: Omit<Goal, 'id'>) => void }) {
   const [name, setName] = useState(goal?.name || '');
   const [description, setDescription] = useState(goal?.description || '');
+  const [type, setType] = useState<'personal' | 'family'>(goal?.type || 'personal');
   
   const todayStr = getLocalDateString(new Date());
   const nextMonth = new Date();
@@ -2587,7 +2934,8 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
       assignees: assignees.length > 0 ? assignees : ['爸爸'],
       assignee: assignees[0] || '爸爸', // fallback for old data
       signature,
-      priority
+      priority,
+      type
     });
   };
 
@@ -2613,7 +2961,7 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
         className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
       >
         <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-          <h2 className="text-xl font-bold text-stone-800">{goal ? '编辑目标' : '新建家庭目标'}</h2>
+          <h2 className="text-xl font-bold text-stone-800">{goal ? '编辑目标' : '新建目标'}</h2>
           <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors cursor-pointer">
             <X className="w-5 h-5" />
           </button>
@@ -2621,6 +2969,29 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
         
         <div className="p-6 overflow-y-auto">
           <form id="goal-form" onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">目标类型</label>
+              <div className="flex gap-3">
+                {(['personal', 'family'] as const).map(t => (
+                  <label key={t} className={`flex-1 flex items-center justify-center py-2 rounded-xl border cursor-pointer transition-colors ${
+                    type === t 
+                      ? 'bg-orange-50 border-orange-200 text-orange-700'
+                      : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                  }`}>
+                    <input 
+                      type="radio" 
+                      name="goalType" 
+                      value={t} 
+                      checked={type === t} 
+                      onChange={() => setType(t)} 
+                      className="sr-only" 
+                    />
+                    <span className="font-medium text-sm">{t === 'personal' ? '个人目标' : '家庭目标'}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1">目标名称</label>
               <input 
