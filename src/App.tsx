@@ -1928,7 +1928,7 @@ export default function App() {
             <Heart className="w-6 h-6 fill-current" />
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
               多盈家庭目标
-              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.1 弹幕版</span>
+              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.2 弹幕版</span>
               {loading && (
                 <div className="w-3 h-3 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin ml-1" />
               )}
