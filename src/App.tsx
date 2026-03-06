@@ -290,106 +290,90 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, is
 
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
-            {(() => {
-              const activeDanmakus = messages.filter(msg => {
-                if (!msg.duration || msg.duration === -1) return true;
-                return (new Date(msg.date).getTime() + msg.duration) > Date.now();
-              }).slice(-20);
+            {isBulletEnabled && messages.filter(msg => {
+              if (!msg.duration || msg.duration === -1) return true;
+              return (new Date(msg.date).getTime() + msg.duration) > Date.now();
+            }).slice(-20).map((msg, i) => {
+              // Assign to a lane based on index or ID
+              const laneIndex = i % LANES_COUNT;
+              const top = getLaneTop(laneIndex);
+              // Add a small random offset to the top within the lane
+              const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
               
-              const hasLeaderActive = activeDanmakus.some(msg => leader && leader.role === msg.user && leader.pts > 0);
+              // Randomize speed slightly for each message
+              const baseSpeed = msg.speed || 10;
+              const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
+              const finalSpeed = Math.max(5, baseSpeed + speedVariation);
 
-              return activeDanmakus.map((msg, i) => {
-                // Assign to a lane based on index or ID
-                const laneIndex = i % LANES_COUNT;
-                const top = getLaneTop(laneIndex);
-                // Add a small random offset to the top within the lane
-                const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
-                
-                // Randomize speed slightly for each message
-                const baseSpeed = msg.speed || 10;
-                const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
-                const finalSpeed = Math.max(5, baseSpeed + speedVariation);
+              // Calculate remaining time and opacity
+              const createdDate = new Date(msg.date).getTime();
+              const duration = msg.duration || (24 * 60 * 60 * 1000);
+              const remainingMs = Math.max(0, createdDate + duration - Date.now());
+              const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+              const isLeader = leader && leader.role === msg.user && leader.pts > 0;
 
-                // Calculate remaining time and opacity
-                const createdDate = new Date(msg.date).getTime();
-                const duration = msg.duration || (24 * 60 * 60 * 1000);
-                const remainingMs = Math.max(0, createdDate + duration - Date.now());
-                const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-                const isLeader = leader && leader.role === msg.user && leader.pts > 0;
+              // Fading logic: start fading in the last hour
+              const oneHourMs = 60 * 60 * 1000;
+              let timeOpacity = 1;
+              if (duration !== -1 && remainingMs <= oneHourMs) {
+                timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
+              }
 
-                // Fading logic: start fading in the last hour
-                const oneHourMs = 60 * 60 * 1000;
-                let timeOpacity = 1;
-                if (duration !== -1 && remainingMs <= oneHourMs) {
-                  timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
-                }
-
-                // "Fight" effect displacement
-                let displacementY = 0;
-                let displacementScale = 1;
-                if (hasLeaderActive && !isLeader) {
-                  // Push away from center lanes
-                  displacementY = laneIndex < LANES_COUNT / 2 ? -15 : 15;
-                  displacementScale = 0.85;
-                }
-
-                return (
-                <motion.div
-                  key={msg.id}
-                  initial={{ left: '100%', x: 0, opacity: 0 }}
-                  animate={{ 
-                    x: '-150vw', 
-                    opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
-                    scale: isLeader ? 1.2 : (msg.effect === 'zoom' ? [displacementScale, displacementScale * 1.2, displacementScale] : displacementScale),
-                    rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
-                    y: isLeader ? (msg.effect === 'wave' ? [0, -10, 10, 0] : 0) : (msg.effect === 'wave' ? [displacementY, displacementY - 5, displacementY + 5, displacementY] : displacementY),
-                    skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
-                    filter: isLeader ? `drop-shadow(0 0 10px ${msg.color || '#fbbf24'})` : (msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none')))),
-                    color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000'),
-                    zIndex: isLeader ? 50 : 10
-                  }}
-                  transition={{ 
-                    x: { duration: isLeader ? finalSpeed * 0.8 : finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
-                    opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
-                    scale: { duration: 1, repeat: Infinity },
-                    rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
-                    y: { duration: 2, repeat: Infinity, type: "spring" },
-                    skewX: { duration: 1, repeat: Infinity },
-                    filter: { duration: 1.5, repeat: Infinity },
-                    color: { duration: 3, repeat: Infinity }
-                  }}
-                  className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''} ${isLeader ? 'ring-2 ring-yellow-400 bg-yellow-50/90' : ''}`}
-                  style={{ 
-                    top: `${top + offset}%`,
-                    fontSize: msg.font_size || '0.9rem',
-                  }}
-                >
-                  <div className="relative">
-                    <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
-                    {isLeader && (
-                      <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
-                    )}
-                  </div>
-                  <span className={`font-bold text-xs ${isLeader ? 'text-yellow-700' : 'text-stone-600'}`}>{msg.user}:</span>
-                  <span style={{ color: msg.color }} className={isLeader ? 'font-black' : ''}>{msg.content}</span>
-                  <div className="flex items-center gap-1 ml-1">
-                    {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
-                    <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
-                      {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
-                    </span>
-                    {isAdmin && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
-                        className="text-stone-300 hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-                );
-              });
-            })()}
+              return (
+              <motion.div
+                key={msg.id}
+                initial={{ left: '100%', x: 0, opacity: 0 }}
+                animate={{ 
+                  x: '-150vw', 
+                  opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
+                  scale: msg.effect === 'zoom' ? [1, 1.2, 1] : (msg.effect === 'pulse' ? [1, 1.1, 1] : (msg.effect === 'bounce' ? [1, 1.1, 1] : 1)),
+                  rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
+                  y: msg.effect === 'wave' ? [0, -10, 10, 0] : (msg.effect === 'float' ? [0, -5, 0] : 0),
+                  skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
+                  filter: msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
+                  color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
+                }}
+                transition={{ 
+                  x: { duration: finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
+                  opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
+                  scale: { duration: 1, repeat: Infinity },
+                  rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
+                  y: { duration: 2, repeat: Infinity },
+                  skewX: { duration: 1, repeat: Infinity },
+                  filter: { duration: 1.5, repeat: Infinity },
+                  color: { duration: 3, repeat: Infinity }
+                }}
+                className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''}`}
+                style={{ 
+                  top: `${top + offset}%`,
+                  fontSize: msg.font_size || '0.9rem',
+                }}
+              >
+                <div className="relative">
+                  <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
+                  {isLeader && (
+                    <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
+                  )}
+                </div>
+                <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
+                <span style={{ color: msg.color }}>{msg.content}</span>
+                <div className="flex items-center gap-1 ml-1">
+                  {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
+                  <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
+                    {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
+                  </span>
+                  {isAdmin && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
+                      className="text-stone-300 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+              );
+            })}
           </AnimatePresence>
           {messages.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
@@ -736,6 +720,7 @@ export default function App() {
         }
 
         if (goalsRes.data) {
+          console.log('Loaded goals:', goalsRes.data);
           const freshGoals = (goalsRes.data as any[]).map((g: any) => ({
             id: g.id, name: g.name, description: g.description, startDate: g.start_date,
             endDate: g.end_date, progress: g.progress, creator: g.creator,
@@ -1014,7 +999,14 @@ export default function App() {
 
   useEffect(() => { if (currentUser) safeSetItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser && taskTab === 'mine') {
+      setTaskTab('family');
+    }
+  }, [currentUser]);
+
   const [filter, setFilter] = useState<FilterType>('待处理');
+  const [taskTab, setTaskTab] = useState<'mine' | 'family'>(currentUser ? 'mine' : 'family');
   const [lbTab, setLbTab] = useState<'total' | 'weekly' | 'daily'>('total');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
@@ -1336,6 +1328,8 @@ export default function App() {
       id: editingGoal ? editingGoal.id : newId,
       confirmations: goalData.confirmations || {}
     };
+
+    console.log('Saving goal:', optimisticGoal);
 
     // Optimistic Update
     if (editingGoal) {
@@ -1716,8 +1710,8 @@ export default function App() {
     if (!aDone && bDone) return -1;
 
     // 2. Current user's tasks first
-    const aIsMine = a.assignees?.includes(currentUser || '') || a.assignee === currentUser;
-    const bIsMine = b.assignees?.includes(currentUser || '') || b.assignee === currentUser;
+    const aIsMine = currentUser ? (a.assignees?.includes(currentUser) || a.assignee === currentUser) : false;
+    const bIsMine = currentUser ? (b.assignees?.includes(currentUser) || b.assignee === currentUser) : false;
     if (aIsMine && !bIsMine) return -1;
     if (!aIsMine && bIsMine) return 1;
     
@@ -1733,7 +1727,10 @@ export default function App() {
     if (weightA !== weightB) return weightA - weightB;
 
     // 4. Then by date (newest first)
-    return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+    const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+    const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+    if (isNaN(dateA) || isNaN(dateB)) return 0;
+    return dateB - dateA;
   });
 
   const isAdmin = currentUser === '管理员';
@@ -2052,89 +2049,86 @@ export default function App() {
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex flex-wrap items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
-              {(['待处理', '已完成'] as FilterType[]).map(f => (
+            <div className="flex flex-col gap-4 mb-6">
+              <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+                {(['待处理', '已完成'] as FilterType[]).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-6 py-2.5 rounded-2xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      filter === f 
+                        ? 'bg-stone-900 text-white shadow-lg shadow-stone-200 scale-105' 
+                        : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center p-1 bg-stone-100 rounded-2xl w-full sm:w-fit">
                 <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-6 py-2.5 rounded-2xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    filter === f 
-                      ? 'bg-stone-900 text-white shadow-lg shadow-stone-200 scale-105' 
-                      : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
+                  onClick={() => setTaskTab('mine')}
+                  className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    taskTab === 'mine' 
+                      ? 'bg-white text-orange-600 shadow-sm' 
+                      : 'text-stone-500 hover:text-stone-700'
                   }`}
                 >
-                  {f}
+                  <User className="w-4 h-4" /> 与我相关
                 </button>
-              ))}
+                <button
+                  onClick={() => setTaskTab('family')}
+                  className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    taskTab === 'family' 
+                      ? 'bg-white text-stone-800 shadow-sm' 
+                      : 'text-stone-500 hover:text-stone-700'
+                  }`}
+                >
+                  <Users className="w-4 h-4" /> 家庭全部
+                </button>
+              </div>
             </div>
 
             {/* Task Grid */}
-            {filteredGoals.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-3xl border border-stone-100 border-dashed">
-                <div className="w-16 h-16 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Target className="w-8 h-8 text-stone-300" />
-                </div>
-                <p className="text-stone-500 font-medium">暂无相关任务</p>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {/* 1. My Related Tasks */}
-                {filteredGoals.filter(g => (g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-bold text-orange-600 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <User className="w-4 h-4" /> 与我相关
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <AnimatePresence mode="popLayout">
-                        {filteredGoals.filter(g => (g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).map(goal => (
-                          <GoalCard 
-                            key={goal.id} 
-                            goal={goal} 
-                            currentUser={currentUser || ''}
-                            profiles={profiles}
-                            onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
-                            onMarkAsDone={() => handleMarkAsDone(goal.id)}
-                            onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
-                            onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
-                            onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
-                            comments={goalComments.filter(c => c.goal_id === goal.id)}
-                            onAddComment={(content) => handleAddGoalComment(goal.id, content)}
-                          />
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                )}
+            {(() => {
+              const displayGoals = taskTab === 'mine' 
+                ? filteredGoals.filter(g => (g.assignees?.includes(currentUser || '') || g.assignee === currentUser))
+                : filteredGoals;
 
-                {/* 2. Other Tasks */}
-                {filteredGoals.filter(g => !(g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <Users className="w-4 h-4" /> 家庭相关
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <AnimatePresence mode="popLayout">
-                        {filteredGoals.filter(g => !(g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).map(goal => (
-                          <GoalCard 
-                            key={goal.id} 
-                            goal={goal} 
-                            currentUser={currentUser || ''}
-                            profiles={profiles}
-                            onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
-                            onMarkAsDone={() => handleMarkAsDone(goal.id)}
-                            onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
-                            onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
-                            onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
-                            comments={goalComments.filter(c => c.goal_id === goal.id)}
-                            onAddComment={(content) => handleAddGoalComment(goal.id, content)}
-                          />
-                        ))}
-                      </AnimatePresence>
+              if (displayGoals.length === 0) {
+                return (
+                  <div className="text-center py-16 bg-white rounded-3xl border border-stone-100 border-dashed">
+                    <div className="w-16 h-16 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Target className="w-8 h-8 text-stone-300" />
                     </div>
+                    <p className="text-stone-500 font-medium">暂无相关任务</p>
                   </div>
-                )}
-              </div>
-            )}
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <AnimatePresence mode="popLayout">
+                    {displayGoals.map(goal => (
+                      <GoalCard 
+                        key={goal.id} 
+                        goal={goal} 
+                        currentUser={currentUser || ''}
+                        profiles={profiles}
+                        onUpdateProgress={(val) => handleUpdateProgress(goal.id, val)}
+                        onMarkAsDone={() => handleMarkAsDone(goal.id)}
+                        onConfirm={(member) => handleConfirmCompletion(goal.id, member)}
+                        onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
+                        onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
+                        comments={goalComments.filter(c => c.goal_id === goal.id)}
+                        onAddComment={(content) => handleAddGoalComment(goal.id, content)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              );
+            })()}
           </div>
 
           {/* 6. Rewards Section (Milestone Style) */}
