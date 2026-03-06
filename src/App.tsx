@@ -771,6 +771,11 @@ export default function App() {
             id: a.id, user: a.user_name, type: a.type as ActivityType, content: a.content, date: a.date, metadata: a.metadata
           }));
           setActivities(freshActs);
+          
+          // If no activities found and user is logged in, add a welcome activity
+          if (freshActs.length === 0 && currentUser) {
+            addActivity('login', '欢迎回来！系统已就绪。');
+          }
         }
 
         if (goalsRes.data) {
@@ -2079,6 +2084,8 @@ export default function App() {
             profiles={profiles} 
             isExpanded={isActivitiesExpanded} 
             onToggle={() => setIsActivitiesExpanded(!isActivitiesExpanded)} 
+            tableMissing={activitiesTableMissing}
+            isAdmin={isAdmin}
           />
 
           {/* 3. Personal Dashboard (If logged in) */}
