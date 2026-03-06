@@ -45,7 +45,7 @@ export type Reward = {
   role?: string; // Optional: specify which role this reward belongs to
 };
 
-export type FilterType = '全部' | '规划中' | '进行中' | '待确认' | '已完成';
+export type FilterType = '待处理' | '已完成';
 
 export type LayoutComponentId = 'hero' | 'danmaku' | 'race' | 'personal' | 'tasks' | 'rewards' | 'rules';
 

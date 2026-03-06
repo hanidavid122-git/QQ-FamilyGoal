@@ -290,90 +290,106 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, is
 
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
-            {isBulletEnabled && messages.filter(msg => {
-              if (!msg.duration || msg.duration === -1) return true;
-              return (new Date(msg.date).getTime() + msg.duration) > Date.now();
-            }).slice(-20).map((msg, i) => {
-              // Assign to a lane based on index or ID
-              const laneIndex = i % LANES_COUNT;
-              const top = getLaneTop(laneIndex);
-              // Add a small random offset to the top within the lane
-              const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
+            {(() => {
+              const activeDanmakus = messages.filter(msg => {
+                if (!msg.duration || msg.duration === -1) return true;
+                return (new Date(msg.date).getTime() + msg.duration) > Date.now();
+              }).slice(-20);
               
-              // Randomize speed slightly for each message
-              const baseSpeed = msg.speed || 10;
-              const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
-              const finalSpeed = Math.max(5, baseSpeed + speedVariation);
+              const hasLeaderActive = activeDanmakus.some(msg => leader && leader.role === msg.user && leader.pts > 0);
 
-              // Calculate remaining time and opacity
-              const createdDate = new Date(msg.date).getTime();
-              const duration = msg.duration || (24 * 60 * 60 * 1000);
-              const remainingMs = Math.max(0, createdDate + duration - Date.now());
-              const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-              const isLeader = leader && leader.role === msg.user && leader.pts > 0;
+              return activeDanmakus.map((msg, i) => {
+                // Assign to a lane based on index or ID
+                const laneIndex = i % LANES_COUNT;
+                const top = getLaneTop(laneIndex);
+                // Add a small random offset to the top within the lane
+                const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
+                
+                // Randomize speed slightly for each message
+                const baseSpeed = msg.speed || 10;
+                const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
+                const finalSpeed = Math.max(5, baseSpeed + speedVariation);
 
-              // Fading logic: start fading in the last hour
-              const oneHourMs = 60 * 60 * 1000;
-              let timeOpacity = 1;
-              if (duration !== -1 && remainingMs <= oneHourMs) {
-                timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
-              }
+                // Calculate remaining time and opacity
+                const createdDate = new Date(msg.date).getTime();
+                const duration = msg.duration || (24 * 60 * 60 * 1000);
+                const remainingMs = Math.max(0, createdDate + duration - Date.now());
+                const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+                const isLeader = leader && leader.role === msg.user && leader.pts > 0;
 
-              return (
-              <motion.div
-                key={msg.id}
-                initial={{ left: '100%', x: 0, opacity: 0 }}
-                animate={{ 
-                  x: '-150vw', 
-                  opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
-                  scale: msg.effect === 'zoom' ? [1, 1.2, 1] : (msg.effect === 'pulse' ? [1, 1.1, 1] : (msg.effect === 'bounce' ? [1, 1.1, 1] : 1)),
-                  rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
-                  y: msg.effect === 'wave' ? [0, -10, 10, 0] : (msg.effect === 'float' ? [0, -5, 0] : 0),
-                  skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
-                  filter: msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
-                  color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
-                }}
-                transition={{ 
-                  x: { duration: finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
-                  opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
-                  scale: { duration: 1, repeat: Infinity },
-                  rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
-                  y: { duration: 2, repeat: Infinity },
-                  skewX: { duration: 1, repeat: Infinity },
-                  filter: { duration: 1.5, repeat: Infinity },
-                  color: { duration: 3, repeat: Infinity }
-                }}
-                className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''}`}
-                style={{ 
-                  top: `${top + offset}%`,
-                  fontSize: msg.font_size || '0.9rem',
-                }}
-              >
-                <div className="relative">
-                  <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
-                  {isLeader && (
-                    <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
-                  )}
-                </div>
-                <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
-                <span style={{ color: msg.color }}>{msg.content}</span>
-                <div className="flex items-center gap-1 ml-1">
-                  {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
-                  <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
-                    {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
-                  </span>
-                  {isAdmin && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
-                      className="text-stone-300 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-              );
-            })}
+                // Fading logic: start fading in the last hour
+                const oneHourMs = 60 * 60 * 1000;
+                let timeOpacity = 1;
+                if (duration !== -1 && remainingMs <= oneHourMs) {
+                  timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
+                }
+
+                // "Fight" effect displacement
+                let displacementY = 0;
+                let displacementScale = 1;
+                if (hasLeaderActive && !isLeader) {
+                  // Push away from center lanes
+                  displacementY = laneIndex < LANES_COUNT / 2 ? -15 : 15;
+                  displacementScale = 0.85;
+                }
+
+                return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ left: '100%', x: 0, opacity: 0 }}
+                  animate={{ 
+                    x: '-150vw', 
+                    opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
+                    scale: isLeader ? 1.2 : (msg.effect === 'zoom' ? [displacementScale, displacementScale * 1.2, displacementScale] : displacementScale),
+                    rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
+                    y: isLeader ? (msg.effect === 'wave' ? [0, -10, 10, 0] : 0) : (msg.effect === 'wave' ? [displacementY, displacementY - 5, displacementY + 5, displacementY] : displacementY),
+                    skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
+                    filter: isLeader ? `drop-shadow(0 0 10px ${msg.color || '#fbbf24'})` : (msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none')))),
+                    color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000'),
+                    zIndex: isLeader ? 50 : 10
+                  }}
+                  transition={{ 
+                    x: { duration: isLeader ? finalSpeed * 0.8 : finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
+                    opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
+                    scale: { duration: 1, repeat: Infinity },
+                    rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
+                    y: { duration: 2, repeat: Infinity, type: "spring" },
+                    skewX: { duration: 1, repeat: Infinity },
+                    filter: { duration: 1.5, repeat: Infinity },
+                    color: { duration: 3, repeat: Infinity }
+                  }}
+                  className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''} ${isLeader ? 'ring-2 ring-yellow-400 bg-yellow-50/90' : ''}`}
+                  style={{ 
+                    top: `${top + offset}%`,
+                    fontSize: msg.font_size || '0.9rem',
+                  }}
+                >
+                  <div className="relative">
+                    <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
+                    {isLeader && (
+                      <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
+                    )}
+                  </div>
+                  <span className={`font-bold text-xs ${isLeader ? 'text-yellow-700' : 'text-stone-600'}`}>{msg.user}:</span>
+                  <span style={{ color: msg.color }} className={isLeader ? 'font-black' : ''}>{msg.content}</span>
+                  <div className="flex items-center gap-1 ml-1">
+                    {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
+                    <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
+                      {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
+                    </span>
+                    {isAdmin && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
+                        className="text-stone-300 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+                );
+              });
+            })()}
           </AnimatePresence>
           {messages.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
@@ -955,6 +971,37 @@ export default function App() {
     };
   }, []);
 
+  // Automatic Login Points
+  useEffect(() => {
+    if (currentUser && txs.length > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      const hasLoggedInToday = txs.some(t => 
+        t.member === currentUser && 
+        t.reason === '每日登录奖励' && 
+        t.date.startsWith(today)
+      );
+
+      if (!hasLoggedInToday) {
+        const awardLoginPoints = async () => {
+          try {
+            await supabase.from('transactions').insert({
+              id: generateId(),
+              member: currentUser,
+              amount: 1,
+              reason: '每日登录奖励',
+              type: 'earned',
+              date: new Date().toISOString()
+            });
+            showToast('每日登录奖励 +1 积分');
+          } catch (e) {
+            console.error('Failed to award login points:', e);
+          }
+        };
+        awardLoginPoints();
+      }
+    }
+  }, [currentUser, txs.length]); // Only run when user changes or txs list is first loaded
+
   // Sync layout when profiles change (handles real-time layout updates for current user)
   useEffect(() => {
     if (currentUser) {
@@ -967,7 +1014,7 @@ export default function App() {
 
   useEffect(() => { if (currentUser) safeSetItem(CURRENT_USER_KEY, currentUser); }, [currentUser]);
 
-  const [filter, setFilter] = useState<FilterType>('全部');
+  const [filter, setFilter] = useState<FilterType>('待处理');
   const [lbTab, setLbTab] = useState<'total' | 'weekly' | 'daily'>('total');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
@@ -1084,26 +1131,44 @@ export default function App() {
   }, [goals, memberStats]); // Removed txs and achs from dependencies to prevent infinite loop
 
   const handleUpdateProgress = async (id: string, progress: number) => {
+    // Optimistic Update
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, progress } : g));
+    
     try {
-      await supabase.from('goals').update({ progress }).eq('id', id);
+      const { error } = await supabase.from('goals').update({ progress }).eq('id', id);
+      if (error) throw error;
       showToast('进度已更新');
     } catch (e) {
       console.error(e);
       showToast('更新失败，请重试', 'error');
+      // Rollback would be here
     }
   };
 
   const handleAddGoalComment = async (goalId: string, content: string) => {
     if (!currentUser) return;
+    const newCommentId = generateId();
+    const newCommentDate = new Date().toISOString();
+    const newCommentObj: GoalComment = {
+      id: newCommentId,
+      goal_id: goalId,
+      user: currentUser,
+      content,
+      date: newCommentDate
+    };
+
+    // Optimistic Update
+    setGoalComments(prev => [...prev, newCommentObj]);
+
     try {
-      const newComment = {
-        id: generateId(),
+      const { error } = await supabase.from('goal_comments').insert({
+        id: newCommentId,
         goal_id: goalId,
         user: currentUser,
         content,
-        date: new Date().toISOString()
-      };
-      await supabase.from('goal_comments').insert(newComment);
+        date: newCommentDate
+      });
+      if (error) throw error;
       
       // Award 1 point, max 10 per day for comments
       const today = new Date().toISOString().split('T')[0];
@@ -1125,8 +1190,10 @@ export default function App() {
         showToast('留言成功 (今日留言积分已达上限)');
       }
     } catch (e) {
-      console.error(e);
+      console.error('Comment failed:', e);
       showToast('留言失败', 'error');
+      // Rollback
+      setGoalComments(prev => prev.filter(c => c.id !== newCommentId));
     }
   };
 
@@ -1248,35 +1315,76 @@ export default function App() {
   };
 
   const handleSaveGoal = async (goalData: Omit<Goal, 'id'>) => {
-    try {
-      const dbGoal = {
-        name: goalData.name,
-        description: goalData.description,
-        start_date: goalData.startDate,
-        end_date: goalData.endDate,
-        progress: goalData.progress,
-        creator: goalData.creator,
-        assignees: goalData.assignees,
-        assignee: goalData.assignee,
-        signature: goalData.signature,
-        priority: goalData.priority,
-        confirmations: goalData.confirmations || {},
-        type: goalData.type || (goalData.assignees.length > 1 ? 'family' : 'personal')
-      };
+    const newId = generateId();
+    const dbGoal = {
+      name: goalData.name,
+      description: goalData.description,
+      start_date: goalData.startDate,
+      end_date: goalData.endDate,
+      progress: goalData.progress,
+      creator: goalData.creator,
+      assignees: goalData.assignees,
+      assignee: goalData.assignee,
+      signature: goalData.signature,
+      priority: goalData.priority,
+      confirmations: goalData.confirmations || {},
+      type: goalData.type || (goalData.assignees.length > 1 ? 'family' : 'personal')
+    };
 
+    const optimisticGoal: Goal = {
+      ...goalData,
+      id: editingGoal ? editingGoal.id : newId,
+      confirmations: goalData.confirmations || {}
+    };
+
+    // Optimistic Update
+    if (editingGoal) {
+      setGoals(prev => prev.map(g => g.id === editingGoal.id ? optimisticGoal : g));
+    } else {
+      setGoals(prev => [...prev, optimisticGoal]);
+    }
+
+    setIsModalOpen(false);
+    setEditingGoal(null);
+
+    try {
       if (editingGoal) {
-        await supabase.from('goals').update(dbGoal).eq('id', editingGoal.id);
-        showToast('目标已更新');
+        const { error } = await supabase.from('goals').update(dbGoal).eq('id', editingGoal.id);
+        if (error) {
+          if (error.message?.includes("'type' column")) {
+            const { type, ...dbGoalNoType } = dbGoal as any;
+            const { error: retryError } = await supabase.from('goals').update(dbGoalNoType).eq('id', editingGoal.id);
+            if (retryError) throw retryError;
+            showToast('目标已更新 (数据库缺少 type 字段，已忽略)');
+          } else {
+            throw error;
+          }
+        } else {
+          showToast('目标已更新');
+        }
       } else {
-        await supabase.from('goals').insert({ ...dbGoal, id: generateId() });
-        showToast('新目标创建成功');
+        const { error } = await supabase.from('goals').insert({ ...dbGoal, id: newId });
+        if (error) {
+          if (error.message?.includes("'type' column")) {
+            const { type, ...dbGoalNoType } = dbGoal as any;
+            const { error: retryError } = await supabase.from('goals').insert({ ...dbGoalNoType, id: newId });
+            if (retryError) throw retryError;
+            showToast('新目标创建成功 (数据库缺少 type 字段，已忽略)');
+          } else {
+            console.error('Supabase insert error:', error);
+            throw error;
+          }
+        } else {
+          showToast('新目标创建成功');
+        }
       }
-      
-      setIsModalOpen(false);
-      setEditingGoal(null);
-    } catch (e) {
-      console.error(e);
-      showToast('保存失败，请重试', 'error');
+    } catch (e: any) {
+      console.error('Save goal failed:', e);
+      showToast(`保存失败: ${e.message || '请重试'}`, 'error');
+      // Rollback optimistic update
+      if (!editingGoal) {
+        setGoals(prev => prev.filter(g => g.id !== newId));
+      }
     }
   };
 
@@ -1597,11 +1705,35 @@ export default function App() {
   }, [txs, lbTab, memberStats]);
 
   const filteredGoals = goals.filter(g => {
-    if (filter === '规划中') return g.progress === 0;
-    if (filter === '进行中') return g.progress > 0 && g.progress < 99;
-    if (filter === '待确认') return g.progress >= 99 && !g.completedAt;
+    if (filter === '待处理') return g.progress < 100 || !g.completedAt;
     if (filter === '已完成') return g.progress >= 100 && g.completedAt;
     return true;
+  }).sort((a, b) => {
+    // 1. Completed tasks at the very bottom
+    const aDone = a.progress >= 100 && a.completedAt;
+    const bDone = b.progress >= 100 && b.completedAt;
+    if (aDone && !bDone) return 1;
+    if (!aDone && bDone) return -1;
+
+    // 2. Current user's tasks first
+    const aIsMine = a.assignees?.includes(currentUser || '') || a.assignee === currentUser;
+    const bIsMine = b.assignees?.includes(currentUser || '') || b.assignee === currentUser;
+    if (aIsMine && !bIsMine) return -1;
+    if (!aIsMine && bIsMine) return 1;
+    
+    // 3. Status priority: In Progress > Planned > Pending Confirmation
+    const getStatusWeight = (g: Goal) => {
+      if (g.progress > 0 && g.progress < 99) return 0; // In Progress
+      if (g.progress === 0) return 1; // Planned
+      if (g.progress >= 99 && !g.completedAt) return 2; // Pending Confirmation
+      return 3;
+    };
+    const weightA = getStatusWeight(a);
+    const weightB = getStatusWeight(b);
+    if (weightA !== weightB) return weightA - weightB;
+
+    // 4. Then by date (newest first)
+    return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
   });
 
   const isAdmin = currentUser === '管理员';
@@ -1921,13 +2053,13 @@ export default function App() {
 
             {/* Filter Tabs */}
             <div className="flex flex-wrap items-center gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar">
-              {(['全部', '规划中', '进行中', '待确认', '已完成'] as FilterType[]).map(f => (
+              {(['待处理', '已完成'] as FilterType[]).map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`px-6 py-2.5 rounded-2xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     filter === f 
-                      ? 'bg-stone-900 text-white shadow-md' 
+                      ? 'bg-stone-900 text-white shadow-lg shadow-stone-200 scale-105' 
                       : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
                   }`}
                 >
@@ -1946,15 +2078,15 @@ export default function App() {
               </div>
             ) : (
               <div className="space-y-8">
-                {/* Personal Goals First */}
-                {filteredGoals.filter(g => g.type === 'personal').length > 0 && (
+                {/* 1. My Related Tasks */}
+                {filteredGoals.filter(g => (g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).length > 0 && (
                   <div>
-                    <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <User className="w-4 h-4" /> 个人目标
+                    <h3 className="text-sm font-bold text-orange-600 uppercase tracking-wider mb-4 flex items-center gap-2">
+                      <User className="w-4 h-4" /> 与我相关
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <AnimatePresence mode="popLayout">
-                        {filteredGoals.filter(g => g.type === 'personal').map(goal => (
+                        {filteredGoals.filter(g => (g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).map(goal => (
                           <GoalCard 
                             key={goal.id} 
                             goal={goal} 
@@ -1974,15 +2106,15 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Family Goals */}
-                {filteredGoals.filter(g => g.type === 'family' || !g.type).length > 0 && (
+                {/* 2. Other Tasks */}
+                {filteredGoals.filter(g => !(g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).length > 0 && (
                   <div>
                     <h3 className="text-sm font-bold text-stone-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <Users className="w-4 h-4" /> 家庭目标
+                      <Users className="w-4 h-4" /> 家庭相关
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <AnimatePresence mode="popLayout">
-                        {filteredGoals.filter(g => g.type === 'family' || !g.type).map(goal => (
+                        {filteredGoals.filter(g => !(g.assignees?.includes(currentUser || '') || g.assignee === currentUser)).map(goal => (
                           <GoalCard 
                             key={goal.id} 
                             goal={goal} 
@@ -2656,7 +2788,10 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
 
 function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone, onConfirm, onEdit, onDelete, comments, onAddComment }: { goal: Goal, currentUser: string, profiles: Profile[], onUpdateProgress: (val: number) => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void, comments: GoalComment[], onAddComment: (content: string) => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showAllComments, setShowAllComments] = useState(false);
   const [commentInput, setCommentInput] = useState('');
+  const sortedComments = [...comments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const displayedComments = showAllComments ? sortedComments : sortedComments.slice(0, 3);
   const [localProgress, setLocalProgress] = useState(goal.progress);
 
   useEffect(() => {
@@ -2840,20 +2975,30 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                 
                 {/* Comments Section */}
                 <div className="mt-4 border-t border-stone-100 pt-4">
-                  <h4 className="text-xs font-bold text-stone-400 uppercase mb-3 flex items-center gap-2">
-                    <FileText className="w-3 h-3" /> 任务讨论
-                  </h4>
-                  <div className="space-y-3 max-h-40 overflow-y-auto mb-3 pr-1">
-                    {comments.length === 0 ? (
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-bold text-stone-400 uppercase flex items-center gap-2">
+                      <FileText className="w-3 h-3" /> 任务讨论
+                    </h4>
+                    {sortedComments.length > 3 && (
+                      <button 
+                        onClick={() => setShowAllComments(!showAllComments)}
+                        className="text-[10px] font-bold text-orange-500 hover:text-orange-600 transition-colors cursor-pointer"
+                      >
+                        {showAllComments ? '收起' : `查看全部 ${sortedComments.length} 条`}
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-3 max-h-60 overflow-y-auto mb-3 pr-1">
+                    {sortedComments.length === 0 ? (
                       <p className="text-[10px] text-stone-400 text-center py-2">暂无留言</p>
                     ) : (
-                      comments.map(c => (
+                      displayedComments.map(c => (
                         <div key={c.id} className="flex gap-2">
                           <UserAvatar role={c.user} profiles={profiles} className="w-5 h-5 shrink-0" />
                           <div className="flex-grow">
                             <div className="flex justify-between items-center mb-0.5">
                               <span className="text-[10px] font-bold text-stone-600">{c.user}</span>
-                              <span className="text-[8px] text-stone-400">{new Date(c.date).toLocaleDateString()}</span>
+                              <span className="text-[8px] text-stone-400">{new Date(c.date).toLocaleString()}</span>
                             </div>
                             <p className="text-xs text-stone-700 bg-stone-50 p-2 rounded-lg">{c.content}</p>
                           </div>
@@ -2903,18 +3048,80 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
   );
 }
 
+function TaskExpiryAlert({ goals, onClose }: { goals: Goal[], onClose: () => void }) {
+  const expiringGoals = goals.filter(g => {
+    if (g.progress >= 100) return false;
+    const today = new Date();
+    const start = new Date(g.startDate);
+    const end = new Date(g.endDate);
+    const total = end.getTime() - start.getTime();
+    const elapsed = today.getTime() - start.getTime();
+    if (total <= 0) return false;
+    const ratio = elapsed / total;
+    return ratio >= 0.8 && ratio < 1.1; // 80% consumed but not too far overdue
+  });
+
+  if (expiringGoals.length === 0) return null;
+
+  return (
+    <motion.div 
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      className="bg-red-500 text-white overflow-hidden relative"
+    >
+      <div className="flex items-center h-10">
+        <div className="flex-shrink-0 px-4 bg-red-600 h-full flex items-center gap-2 z-10">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-xs font-bold whitespace-nowrap">紧急提醒</span>
+        </div>
+        <div className="flex-grow overflow-hidden relative h-full flex items-center">
+          <div className="whitespace-nowrap animate-marquee flex items-center gap-8">
+            {expiringGoals.map(g => (
+              <span key={g.id} className="text-sm font-medium">
+                任务「{g.name}」时间已消耗超过 80%，请抓紧时间完成！
+              </span>
+            ))}
+            {/* Duplicate for seamless loop */}
+            {expiringGoals.map(g => (
+              <span key={`${g.id}-dup`} className="text-sm font-medium">
+                任务「{g.name}」时间已消耗超过 80%，请抓紧时间完成！
+              </span>
+            ))}
+          </div>
+        </div>
+        <button 
+          onClick={onClose}
+          className="flex-shrink-0 px-4 hover:bg-red-600 h-full flex items-center transition-colors cursor-pointer z-10"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <style>{`
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+      `}</style>
+    </motion.div>
+  );
+}
+
 function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, currentUser: string, onClose: () => void, onSave: (g: Omit<Goal, 'id'>) => void }) {
   const [name, setName] = useState(goal?.name || '');
   const [description, setDescription] = useState(goal?.description || '');
   const [type, setType] = useState<'personal' | 'family'>(goal?.type || 'personal');
   
   const todayStr = getLocalDateString(new Date());
-  const nextMonth = new Date();
-  nextMonth.setMonth(nextMonth.getMonth() + 1);
-  const nextMonthStr = getLocalDateString(nextMonth);
+  const nextWeek = new Date();
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  const nextWeekStr = getLocalDateString(nextWeek);
 
   const [startDate, setStartDate] = useState(goal?.startDate || todayStr);
-  const [endDate, setEndDate] = useState(goal?.endDate || nextMonthStr);
+  const [endDate, setEndDate] = useState(goal?.endDate || nextWeekStr);
   const [progress, setProgress] = useState(goal?.progress || 0);
   const [creator, setCreator] = useState(goal?.creator || currentUser);
   const [assignees, setAssignees] = useState<string[]>(goal?.assignees || (goal?.assignee ? [goal.assignee] : [currentUser === '管理员' ? '爸爸' : currentUser]));
@@ -3024,6 +3231,33 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
                   required type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
                   className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
                 />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-stone-700 mb-2">快捷选择时长</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: '1天', days: 1 },
+                  { label: '3天', days: 3 },
+                  { label: '1周', days: 7 },
+                  { label: '半个月', days: 15 },
+                  { label: '1个月', days: 30 }
+                ].map(opt => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => {
+                      const start = new Date(startDate);
+                      const end = new Date(start);
+                      end.setDate(start.getDate() + opt.days);
+                      setEndDate(getLocalDateString(end));
+                    }}
+                    className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
             </div>
 
