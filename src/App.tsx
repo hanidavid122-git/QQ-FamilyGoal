@@ -11,7 +11,8 @@ import {
 
 import { 
   Priority, Goal, Transaction, Achievement, Reward, FilterType, 
-  LayoutComponentId, LayoutConfig, Profile, Message, GoalComment
+  LayoutComponentId, LayoutConfig, Profile, Message, GoalComment,
+  Activity, ActivityType
 } from './types';
 import { 
   ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
@@ -21,6 +22,7 @@ import {
 import { LoginModal } from './components/LoginModal';
 import { LayoutSettingsModal } from './components/LayoutSettingsModal';
 import { UserAvatar } from './components/UserAvatar';
+import { RecentActivity } from './components/RecentActivity';
 
 const STORAGE_KEY = 'family_goals_data';
 const TX_KEY = 'family_goals_txs';
@@ -578,6 +580,47 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [profilesTableMissing, setProfilesTableMissing] = useState(false);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [isActivitiesExpanded, setIsActivitiesExpanded] = useState(false);
+  const [activitiesTableMissing, setActivitiesTableMissing] = useState(false);
+
+  const addActivity = async (type: ActivityType, content: string, metadata?: any, userOverride?: string) => {
+    const user = userOverride || currentUser;
+    if (!user) return;
+    
+    const newActivity: Activity = {
+      id: generateId(),
+      user,
+      type,
+      content,
+      date: new Date().toISOString(),
+      metadata
+    };
+    
+    // Optimistic update
+    setActivities(prev => {
+      if (prev.some(a => a.id === newActivity.id)) return prev;
+      return [newActivity, ...prev].slice(0, 50);
+    });
+    
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.from('activities').insert({
+          id: newActivity.id,
+          user_name: newActivity.user,
+          type: newActivity.type,
+          content: newActivity.content,
+          date: newActivity.date,
+          metadata: newActivity.metadata
+        });
+        if (error && error.message?.includes('relation "activities" does not exist')) {
+          setActivitiesTableMissing(true);
+        }
+      } catch (e) {
+        console.error('Failed to save activity:', e);
+      }
+    }
+  };
 
   // Load initial data
   useEffect(() => {
@@ -705,18 +748,29 @@ export default function App() {
         const profilesPromise = supabase.from('profiles').select('*');
         const goalCommentsPromise = supabase.from('goal_comments').select('*').order('date', { ascending: true });
 
-        const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes, goalCommentsRes] = await Promise.all([
+        const [goalsRes, txsRes, achsRes, rewardsRes, msgsRes, profilesRes, goalCommentsRes, activitiesRes] = await Promise.all([
             goalsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             txsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             achsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             rewardsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             msgsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
             profilesPromise.then(res => res, (e: any) => ({ data: null, error: e })),
-            goalCommentsPromise.then(res => res, (e: any) => ({ data: null, error: e }))
+            goalCommentsPromise.then(res => res, (e: any) => ({ data: null, error: e })),
+            supabase.from('activities').select('*').order('date', { ascending: false }).limit(50).then(res => res, (e: any) => ({ data: null, error: e }))
         ]);
 
         if (profilesRes.error && (profilesRes.error as any).code === '42P01') {
           setProfilesTableMissing(true);
+        }
+        if (activitiesRes.error && (activitiesRes.error as any).code === '42P01') {
+          setActivitiesTableMissing(true);
+        }
+
+        if (activitiesRes.data) {
+          const freshActs = (activitiesRes.data as any[]).map(a => ({
+            id: a.id, user: a.user_name, type: a.type as ActivityType, content: a.content, date: a.date, metadata: a.metadata
+          }));
+          setActivities(freshActs);
         }
 
         if (goalsRes.data) {
@@ -948,6 +1002,20 @@ export default function App() {
             // Note: We use a ref or check state inside the setter to avoid closure issues
             // But for layout, we'll handle it in a separate useEffect watching profiles
         }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, payload => {
+        setActivities(prev => {
+          if (prev.some(p => p.id === payload.new.id)) return prev;
+          const newAct = {
+            id: payload.new.id,
+            user: payload.new.user_name,
+            type: payload.new.type as ActivityType,
+            content: payload.new.content,
+            date: payload.new.date,
+            metadata: payload.new.metadata
+          };
+          return [newAct, ...prev].slice(0, 50);
+        });
       })
       .subscribe();
 
@@ -1212,6 +1280,8 @@ export default function App() {
         updates.completed_at = new Date().toISOString();
         updates.progress = 100;
         
+        addActivity('goal_completed', `完成了目标: ${goal.name}`, { goalId: id });
+        
         const isEarly = new Date() < new Date(goal.endDate);
         const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
         const isTeam = assignees.length > 1;
@@ -1336,6 +1406,7 @@ export default function App() {
       setGoals(prev => prev.map(g => g.id === editingGoal.id ? optimisticGoal : g));
     } else {
       setGoals(prev => [...prev, optimisticGoal]);
+      addActivity('goal_created', `创建了新目标: ${goalData.name}`, { goalId: newId });
     }
 
     setIsModalOpen(false);
@@ -1585,6 +1656,8 @@ export default function App() {
         const { error } = await supabase.from('messages').insert(newMsg);
         if (error) throw error;
 
+        addActivity('danmaku', `发布了弹幕: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}`);
+
         // Award 1 point for sending a message, respecting daily limit
         const currentDaily = getDailyMessagePoints(currentUser);
         if (currentDaily < 10) {
@@ -1771,6 +1844,7 @@ export default function App() {
       if (profile.pin?.trim() === pin.trim()) {
         console.log('Login successful');
         setCurrentUser(role);
+        addActivity('login', '进入了系统', null, role);
 
         // Daily Login Bonus
         try {
@@ -2000,6 +2074,13 @@ export default function App() {
             isBulletEnabled={isBulletEnabled}
           />
 
+          <RecentActivity 
+            activities={activities} 
+            profiles={profiles} 
+            isExpanded={isActivitiesExpanded} 
+            onToggle={() => setIsActivitiesExpanded(!isActivitiesExpanded)} 
+          />
+
           {/* 3. Personal Dashboard (If logged in) */}
           {currentUser && (
             <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-[2rem] p-6 text-white shadow-lg">
@@ -2050,22 +2131,6 @@ export default function App() {
 
             {/* Filter Tabs */}
             <div className="flex flex-col gap-4 mb-6">
-              <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-                {(['待处理', '已完成'] as FilterType[]).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`px-6 py-2.5 rounded-2xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                      filter === f 
-                        ? 'bg-stone-900 text-white shadow-lg shadow-stone-200 scale-105' 
-                        : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-
               <div className="flex items-center p-1 bg-stone-100 rounded-2xl w-full sm:w-fit">
                 <button
                   onClick={() => setTaskTab('mine')}
@@ -2087,6 +2152,22 @@ export default function App() {
                 >
                   <Users className="w-4 h-4" /> 家庭全部
                 </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+                {(['全部', '待处理', '已完成'] as FilterType[]).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-6 py-2.5 rounded-2xl text-sm font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      filter === f 
+                        ? 'bg-stone-900 text-white shadow-lg shadow-stone-200 scale-105' 
+                        : 'bg-white text-stone-500 hover:bg-stone-100 border border-stone-200'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
               </div>
             </div>
 

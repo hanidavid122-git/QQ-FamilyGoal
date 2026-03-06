@@ -21,3 +21,19 @@ BEGIN
         ALTER TABLE public.messages ADD COLUMN color text;
     END IF;
 END $$;
+
+-- 4. Create activities table
+CREATE TABLE IF NOT EXISTS public.activities (
+    id TEXT PRIMARY KEY,
+    user_name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    date TIMESTAMPTZ DEFAULT now(),
+    metadata JSONB
+);
+
+-- Enable RLS
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
+
+-- Create policy for public access (adjust as needed for security)
+CREATE POLICY "Public Activities Access" ON public.activities FOR ALL USING (true);
