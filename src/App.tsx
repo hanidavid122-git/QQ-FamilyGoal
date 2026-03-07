@@ -1929,15 +1929,20 @@ export default function App() {
           const isEarly = new Date() < new Date(goal.endDate);
           const isTeam = goalAssignees.length > 1;
           
-          // Calculate points based on new rules
-          const basePoints = 10;
-          const earlyPoints = isEarly ? 3 : 0;
-          const teamBonus = isTeam ? 5 : 0;
-          const totalPointsForTask = basePoints + earlyPoints + teamBonus;
-          const pointsPerPerson = isTeam ? Math.ceil(totalPointsForTask / goalAssignees.length) : totalPointsForTask;
+          // Calculate points based on user's request:
+          // 1. Base points (10) are shared among participants.
+          // 2. Early bonus (3) is shared among participants.
+          // 3. Team bonus (3) is awarded to EACH person if there's more than 1 participant.
+          const baseTotal = 10;
+          const earlyTotal = isEarly ? 3 : 0;
+          const sharedPointsPerPerson = Math.ceil((baseTotal + earlyTotal) / goalAssignees.length);
+          const teamBonusPerPerson = isTeam ? 3 : 0;
+          const pointsPerPerson = sharedPointsPerPerson + teamBonusPerPerson;
 
           const membersStr = goalAssignees.join('、');
-          addActivity('goal_completed', `团队 [${membersStr}] 完成了目标: ${goal.name} (每人获得 ${pointsPerPerson} 积分)`, { goalId: id }, '系统');
+          const breakdownStr = `基础分配: ${Math.ceil(baseTotal / goalAssignees.length)}${isEarly ? `, 提前奖励: ${Math.ceil(earlyTotal / goalAssignees.length)}` : ''}${isTeam ? `, 团队协作: ${teamBonusPerPerson}` : ''}`;
+          
+          addActivity('goal_completed', `团队 [${membersStr}] 完成了目标: ${goal.name} (每人获得 ${pointsPerPerson} 积分: ${breakdownStr})`, { goalId: id }, '系统');
           
           const newTxs: any[] = [];
           goalAssignees.forEach(m => {
@@ -1945,7 +1950,7 @@ export default function App() {
               id: generateId(), 
               member: m, 
               amount: pointsPerPerson, 
-              reason: `完成目标: ${goal.name}${isEarly ? ' (含提前奖励)' : ''}${isTeam ? ' (团队分配)' : ''}`, 
+              reason: `完成目标: ${goal.name} (${breakdownStr})`, 
               type: 'earned', 
               date: new Date().toISOString() 
             });

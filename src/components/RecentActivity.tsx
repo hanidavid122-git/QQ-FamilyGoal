@@ -14,15 +14,14 @@ interface RecentActivityProps {
 }
 
 export function RecentActivity({ activities, profiles, isExpanded, onToggle, tableMissing, isAdmin }: RecentActivityProps) {
-  const [showAll, setShowAll] = React.useState(false);
   const hasActivities = activities.length > 0;
   const latest = hasActivities ? activities[0] : null;
   
   // Logic: 
   // If collapsed: show 1
-  // If expanded: show 5, then show "View All" button
+  // If expanded: show all available activities
   const displayActivities = isExpanded 
-    ? (showAll ? activities : activities.slice(0, 5))
+    ? activities
     : (latest ? [latest] : []);
 
   const formatTime = (dateStr: string) => {
@@ -111,24 +110,6 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
                       </div>
                     </motion.div>
                   ))}
-                  
-                  {activities.length > 5 && !showAll && isExpanded && (
-                    <button 
-                      onClick={() => setShowAll(true)}
-                      className="w-full py-2 text-[10px] font-bold text-stone-400 hover:text-stone-600 transition-colors border-t border-stone-50 border-dashed mt-2"
-                    >
-                      查看更多动态 ({activities.length - 5}+)
-                    </button>
-                  )}
-
-                  {showAll && isExpanded && (
-                    <button 
-                      onClick={() => setShowAll(false)}
-                      className="w-full py-2 text-[10px] font-bold text-stone-400 hover:text-stone-600 transition-colors border-t border-stone-50 border-dashed mt-2"
-                    >
-                      收起部分动态
-                    </button>
-                  )}
                 </>
               ) : (
                 <div className="text-center py-8 text-stone-400 text-xs italic">
