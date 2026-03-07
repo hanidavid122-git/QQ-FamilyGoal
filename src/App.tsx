@@ -250,7 +250,7 @@ function PointsDynamics({
   isExpanded: boolean, 
   onToggle: () => void 
 }) {
-  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'all'>('week');
+  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'all'>('today');
 
   const data = useMemo(() => {
     const roles = ROLES.filter(r => r !== '管理员');
@@ -1063,7 +1063,14 @@ export default function App() {
   const [isActivitiesExpanded, setIsActivitiesExpanded] = useState(false);
   const [isWeeklyGrowthExpanded, setIsWeeklyGrowthExpanded] = useState(false);
   const [activitiesTableMissing, setActivitiesTableMissing] = useState(false);
-  const [showDanmakuBoard, setShowDanmakuBoard] = useState(true);
+  const [showDanmakuBoard, setShowDanmakuBoard] = useState(() => {
+    const saved = localStorage.getItem('family_goals_danmaku_expanded');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('family_goals_danmaku_expanded', JSON.stringify(showDanmakuBoard));
+  }, [showDanmakuBoard]);
 
   const addActivity = async (type: ActivityType, content: string, metadata?: any, userOverride?: string) => {
     const user = userOverride || currentUser;
@@ -2363,7 +2370,14 @@ export default function App() {
     }
   };
 
-  const [isBulletEnabled, setIsBulletEnabled] = useState(true);
+  const [isBulletEnabled, setIsBulletEnabled] = useState(() => {
+    const saved = localStorage.getItem('family_goals_bullet_enabled');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('family_goals_bullet_enabled', JSON.stringify(isBulletEnabled));
+  }, [isBulletEnabled]);
 
   const handleUpdateProfilePin = async (role: string, newPin: string) => {
     const { error } = await supabase
