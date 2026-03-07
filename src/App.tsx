@@ -3118,15 +3118,15 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">基础奖励</div>
-                  <div className="font-bold text-stone-700">完成目标 <span className="text-emerald-500">+10</span></div>
+                  <div className="font-bold text-stone-700">完成目标 <span className="text-emerald-500">10 分/任务 (平分)</span></div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">额外加分</div>
-                  <div className="font-bold text-stone-700">提前完成 <span className="text-blue-500">+3</span></div>
+                  <div className="font-bold text-stone-700">提前完成 <span className="text-blue-500">+3 分/任务 (平分)</span></div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">团队协作</div>
-                  <div className="font-bold text-stone-700">多人任务 <span className="text-purple-500">总分/人数 (向上取整)</span></div>
+                  <div className="font-bold text-stone-700">多人任务 <span className="text-purple-500">每人额外 +3 分</span></div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">积分上限</div>
