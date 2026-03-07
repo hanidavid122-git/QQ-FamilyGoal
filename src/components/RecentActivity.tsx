@@ -129,10 +129,6 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
                       收起部分动态
                     </button>
                   )}
-
-                  {activities.length >= 50 && (
-                    <p className="text-center text-[10px] text-stone-400 pt-2">仅显示最近 50 条动态</p>
-                  )}
                 </>
               ) : (
                 <div className="text-center py-8 text-stone-400 text-xs italic">

@@ -19,7 +19,8 @@ import {
 import { 
   ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
   DEFAULT_REWARDS, ICONS, AVATARS, MESSAGE_COLORS,
-  DANMAKU_EMOJIS, DANMAKU_SPEEDS, DANMAKU_EFFECTS, DANMAKU_DURATIONS
+  DANMAKU_EMOJIS, DANMAKU_SPEEDS, DANMAKU_EFFECTS, DANMAKU_DURATIONS,
+  commonEmojis
 } from './constants';
 import { LoginModal } from './components/LoginModal';
 import { LayoutSettingsModal } from './components/LayoutSettingsModal';
@@ -493,9 +494,8 @@ const DANMAKU_EFFECT_LABELS: Record<string, string> = {
 };
 
 function DanmakuItem({ msg, profiles, isLeader, isAdmin, onDeleteMessage, i, laneIndex, top }: { msg: Message, profiles: Profile[], isLeader: boolean, isAdmin: boolean, onDeleteMessage?: (id: string | string[]) => void, i: number, laneIndex: number, top: number }) {
-  const [loopCount, setLoopCount] = useState(0);
   const effects = useMemo(() => (msg.effect || 'default').split(','), [msg.effect]);
-  const randomEffect = useMemo(() => effects[Math.floor(Math.random() * effects.length)] || 'default', [msg.id, loopCount, effects]);
+  const randomEffect = useMemo(() => effects[Math.floor(Math.random() * effects.length)] || 'default', [msg.id, effects]);
 
   const offset = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3, [msg.id]);
   const baseSpeed = msg.speed || 10;
@@ -512,12 +512,14 @@ function DanmakuItem({ msg, profiles, isLeader, isAdmin, onDeleteMessage, i, lan
     timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
   }
 
+  const initialDelay = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 15) * 0.5, [msg.id]);
+
   return (
     <motion.div
-      key={`${msg.id}-${loopCount}`}
-      initial={{ left: '100%', x: 0, opacity: 0 }}
+      key={msg.id}
+      initial={{ x: '100vw', opacity: 0 }}
       animate={{ 
-        x: '-150vw', 
+        x: '-100%', 
         opacity: (randomEffect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (randomEffect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
         scale: randomEffect === 'zoom' ? [1, 1.2, 1] : (randomEffect === 'pulse' ? [1, 1.1, 1] : (randomEffect === 'bounce' ? [1, 1.1, 1] : 1)),
         rotate: randomEffect === 'rotate' ? [0, 360] : (randomEffect === 'shake' ? [0, 2, -2, 0] : (randomEffect === 'flip' ? [0, 180, 360] : 0)),
@@ -527,7 +529,12 @@ function DanmakuItem({ msg, profiles, isLeader, isAdmin, onDeleteMessage, i, lan
         color: randomEffect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
       }}
       transition={{ 
-        x: { duration: finalSpeed, ease: "linear", delay: loopCount === 0 ? i * 0.8 : 0 },
+        x: { 
+          duration: finalSpeed, 
+          ease: "linear", 
+          repeat: Infinity,
+          delay: initialDelay
+        },
         opacity: { duration: (randomEffect === 'blink' || randomEffect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
         scale: { duration: 1, repeat: Infinity },
         rotate: { duration: randomEffect === 'rotate' ? 2 : 0.5, repeat: Infinity },
@@ -536,9 +543,9 @@ function DanmakuItem({ msg, profiles, isLeader, isAdmin, onDeleteMessage, i, lan
         filter: { duration: 1.5, repeat: Infinity },
         color: { duration: 3, repeat: Infinity }
       }}
-      onAnimationComplete={() => setLoopCount(prev => prev + 1)}
       className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${randomEffect === 'glitch' ? 'animate-pulse' : ''}`}
       style={{ 
+        left: 0,
         top: `${top + offset}%`,
         fontSize: msg.font_size || '0.9rem',
       }}
@@ -912,6 +919,18 @@ function DanmakuBoard({
                     className="overflow-hidden mt-4"
                   >
                     <div className="bg-stone-50 border border-stone-100 rounded-2xl p-4 space-y-4">
+                      {/* 快捷表情栏 */}
+                      <div className="flex flex-wrap gap-2 pb-2 border-b border-stone-200/50">
+                        {commonEmojis.map(emoji => (
+                          <button 
+                            key={emoji}
+                            onClick={() => onSend(emoji, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect.join(','), selectedDuration)}
+                            className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer bg-white rounded-lg shadow-sm border border-stone-100"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {MESSAGE_COLORS.map(color => (
                           <button 
@@ -2661,15 +2680,19 @@ export default function App() {
     <div className="min-h-screen bg-orange-50 font-sans text-stone-800 pb-20">
       <header className="bg-white shadow-sm border-b border-orange-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-orange-600">
-            <Heart className="w-6 h-6 fill-current" />
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              多盈家庭目标
-              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.3 好看版</span>
-              {loading && (
-                <div className="w-3 h-3 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin ml-1" />
-              )}
-            </h1>
+          <div className="flex items-center gap-3">
+            <Heart className="w-6 h-6 text-red-500 fill-current" />
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-2xl font-black italic tracking-tighter bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent drop-shadow-sm leading-none">
+                DDYY@ME
+              </h1>
+              <span className="text-[10px] font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal whitespace-nowrap">
+                v2.3 好看版
+              </span>
+            </div>
+            {loading && (
+              <div className="w-3 h-3 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
+            )}
           </div>
           <div className="flex items-center gap-3">
             {currentUser && (
@@ -3539,11 +3562,11 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
   const [commentImage, setCommentImage] = useState<string | null>(null);
   const [replyToId, setReplyToId] = useState<string | undefined>(undefined);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const commentInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const sortedComments = [...comments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const displayedComments = showAllComments ? sortedComments : sortedComments.slice(0, 3);
   const [localProgress, setLocalProgress] = useState(goal.progress);
-
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLocalProgress(goal.progress);
@@ -3584,8 +3607,6 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
       reader.readAsDataURL(file);
     }
   };
-
-  const commonEmojis = ['👍', '👏', '🔥', '❤️', '🎯', '✅', '💪', '🎉', '✨', '🚀'];
 
   return (
     <motion.div 
@@ -3777,6 +3798,13 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                                   onClick={() => {
                                     setCommentInput(`@${c.user} `);
                                     setReplyToId(c.id);
+                                    setTimeout(() => {
+                                      if (commentInputRef.current) {
+                                        commentInputRef.current.focus();
+                                        const len = commentInputRef.current.value.length;
+                                        commentInputRef.current.setSelectionRange(len, len);
+                                      }
+                                    }, 0);
                                   }}
                                   className="text-[8px] font-bold text-orange-500 hover:text-orange-600"
                                 >
@@ -3871,6 +3899,7 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                     <div className="flex gap-2">
                       <div className="relative flex-grow">
                         <input 
+                          ref={commentInputRef}
                           value={commentInput}
                           onChange={e => setCommentInput(e.target.value)}
                           placeholder="写下你的评论或建议..."
