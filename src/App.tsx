@@ -139,69 +139,6 @@ function LineChart({ data }: { data: number[] }) {
 
 const MESSAGES_KEY = 'family_goals_messages';
 
-function TaskWarningBar({ goals }: { goals: Goal[] }) {
-  const [isVisible, setIsVisible] = useState(true);
-  
-  const atRiskGoals = useMemo(() => {
-    return goals.filter(goal => {
-      if (goal.progress >= 100) return false;
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const start = new Date(goal.startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(goal.endDate);
-      end.setHours(0, 0, 0, 0);
-      
-      const totalDays = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-      const elapsedDays = Math.max(0, (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-      const timeElapsedPercent = Math.min(100, (elapsedDays / totalDays) * 100);
-      
-      return timeElapsedPercent >= 80;
-    });
-  }, [goals]);
-
-  if (!isVisible || atRiskGoals.length === 0) return null;
-
-  return (
-    <div className="bg-red-500 text-white py-2 px-4 relative overflow-hidden">
-      <div className="max-w-5xl mx-auto flex items-center justify-between relative z-10">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <AlertCircle className="w-4 h-4 shrink-0 animate-pulse" />
-          <div className="whitespace-nowrap animate-marquee flex gap-8">
-            {atRiskGoals.map(goal => (
-              <span key={goal.id} className="text-sm font-bold">
-                ⚠️ 任务提醒: [{goal.name}] 时间已消耗 80% 以上，请尽快完成！
-              </span>
-            ))}
-            {/* Duplicate for seamless loop */}
-            {atRiskGoals.map(goal => (
-              <span key={`${goal.id}-dup`} className="text-sm font-bold">
-                ⚠️ 任务提醒: [{goal.name}] 时间已消耗 80% 以上，请尽快完成！
-              </span>
-            ))}
-          </div>
-        </div>
-        <button 
-          onClick={() => setIsVisible(false)}
-          className="ml-4 p-1 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee {
-          animation: marquee 30s linear infinite;
-        }
-      `}</style>
-    </div>
-  );
-}
-
 function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
   const data = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -210,61 +147,59 @@ function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
       return d.toISOString().split('T')[0];
     });
 
-    let cumulativeTask = 0;
-    let cumulativeOther = 0;
+    let cumulativeTotal = 0;
 
     const startDate = last7Days[0];
     const initialTxs = transactions.filter(t => t.date < startDate);
-    const initialTask = initialTxs
-      .filter(t => t.type === 'earned' && (t.reason.includes('目标') || t.reason.includes('完成')))
-      .reduce((sum, t) => sum + t.amount, 0);
     const initialEarned = initialTxs
-      .filter(t => t.type === 'earned')
+      .filter(t => t.type === 'earned' || t.type === 'earn')
       .reduce((sum, t) => sum + t.amount, 0);
     const initialRedeemed = initialTxs
       .filter(t => t.type === 'redeemed' || t.type === 'redeem')
       .reduce((sum, t) => sum + t.amount, 0);
     
-    cumulativeTask = initialTask;
-    cumulativeOther = (initialEarned - initialTask) - initialRedeemed;
+    cumulativeTotal = initialEarned - initialRedeemed;
 
     return last7Days.map(date => {
       const dayTxs = transactions.filter(t => t.date.startsWith(date));
-      const dayTask = dayTxs
-        .filter(t => t.type === 'earned' && (t.reason.includes('目标') || t.reason.includes('完成')))
-        .reduce((sum, t) => sum + t.amount, 0);
-      const dayOtherEarned = dayTxs
-        .filter(t => t.type === 'earned' && !(t.reason.includes('目标') || t.reason.includes('完成')))
+      const dayEarned = dayTxs
+        .filter(t => t.type === 'earned' || t.type === 'earn')
         .reduce((sum, t) => sum + t.amount, 0);
       const dayRedeemed = dayTxs
         .filter(t => t.type === 'redeemed' || t.type === 'redeem')
         .reduce((sum, t) => sum + t.amount, 0);
 
-      cumulativeTask += dayTask;
-      cumulativeOther += (dayOtherEarned - dayRedeemed);
+      cumulativeTotal += (dayEarned - dayRedeemed);
 
       return {
         date: date.split('-').slice(1).join('/'),
-        task: cumulativeTask,
-        other: Math.max(0, cumulativeOther),
-        total: Math.max(0, cumulativeTask + cumulativeOther)
+        total: Math.max(0, cumulativeTotal)
       };
     });
   }, [transactions]);
 
   const lastPoint = data[data.length - 1];
-  const taskRatio = lastPoint.total > 0 ? Math.round((lastPoint.task / lastPoint.total) * 100) : 0;
+  
+  // Calculate task contribution percentage for the legend
+  const taskContribution = useMemo(() => {
+    const earnedTxs = transactions.filter(t => t.type === 'earned' || t.type === 'earn');
+    const totalEarned = earnedTxs.reduce((sum, t) => sum + t.amount, 0);
+    const taskEarned = earnedTxs
+      .filter(t => t.reason.includes('目标') || t.reason.includes('完成'))
+      .reduce((sum, t) => sum + t.amount, 0);
+    return totalEarned > 0 ? Math.round((taskEarned / totalEarned) * 100) : 0;
+  }, [transactions]);
 
   return (
     <div className="w-full mt-4">
       <div className="flex items-center justify-center gap-6 mb-3">
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-yellow-400 rounded-full" />
-          <span className="text-[10px] text-white/90 font-black">任务贡献 ({taskRatio}%)</span>
+          <span className="text-[10px] text-white/90 font-black">任务贡献 ({taskContribution}%)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-white/40 rounded-full" />
-          <span className="text-[10px] text-white/70 font-bold">其他来源 ({100 - taskRatio}%)</span>
+          <span className="text-[10px] text-white/70 font-bold">其他来源 ({100 - taskContribution}%)</span>
         </div>
       </div>
       <div className="h-28 w-full">
@@ -283,25 +218,16 @@ function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
               contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '16px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontSize: '11px' }}
               labelStyle={{ fontWeight: 'black', color: '#1c1917', marginBottom: '4px' }}
               itemStyle={{ padding: '2px 0' }}
-              formatter={(value: any, name: string) => [
+              formatter={(value: any) => [
                 <span className="font-bold">{value} pts</span>, 
-                <span className="text-stone-500">{name === 'task' ? '任务贡献' : '其他来源'}</span>
+                <span className="text-stone-500">家庭总积分</span>
               ]}
             />
             <Line 
               type="monotone" 
-              dataKey="other" 
-              stroke="rgba(255,255,255,0.4)" 
-              strokeWidth={2}
-              dot={{ r: 2, fill: 'rgba(255,255,255,0.4)', strokeWidth: 0 }}
-              activeDot={{ r: 4, fill: '#fff' }}
-              isAnimationActive={true}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="task" 
+              dataKey="total" 
               stroke="#fbbf24" 
-              strokeWidth={5}
+              strokeWidth={4}
               dot={{ r: 3, fill: '#fbbf24', strokeWidth: 0 }}
               activeDot={{ r: 6, fill: '#fbbf24', stroke: '#fff', strokeWidth: 2 }}
               isAnimationActive={true}
@@ -325,24 +251,33 @@ function PointsDynamics({
   onToggle: () => void 
 }) {
   const data = useMemo(() => {
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      return d.toISOString().split('T')[0];
-    });
-
     const roles = ROLES.filter(r => r !== '管理员');
     
     return roles.map(role => {
-      const roleTxs = transactions.filter(t => t.member === role && t.type === 'earned' && t.date >= last7Days[0]);
-      const growth = roleTxs.reduce((sum, t) => sum + t.amount, 0);
+      const roleTxs = transactions.filter(t => t.member === role && (t.type === 'earned' || t.type === 'earn'));
+      const total = roleTxs.reduce((sum, t) => sum + t.amount, 0);
       
-      const taskPoints = roleTxs.filter(t => t.reason.includes('目标') || t.reason.includes('完成')).reduce((sum, t) => sum + t.amount, 0);
-      const otherPoints = growth - taskPoints;
-      const taskRatio = growth > 0 ? Math.round((taskPoints / growth) * 100) : 0;
+      const task = roleTxs.filter(t => t.reason.includes('目标') || t.reason.includes('完成')).reduce((sum, t) => sum + t.amount, 0);
+      const login = roleTxs.filter(t => t.reason.includes('登录')).reduce((sum, t) => sum + t.amount, 0);
+      const danmaku = roleTxs.filter(t => t.reason.includes('弹幕')).reduce((sum, t) => sum + t.amount, 0);
+      const comment = roleTxs.filter(t => t.reason.includes('留言') && !t.reason.includes('弹幕')).reduce((sum, t) => sum + t.amount, 0);
+      const other = total - task - login - danmaku - comment;
 
-      return { role, growth, taskPoints, otherPoints, taskRatio };
-    }).sort((a, b) => b.growth - a.growth);
+      return { 
+        role, 
+        total, 
+        task, 
+        login, 
+        danmaku, 
+        comment, 
+        other,
+        taskPct: total > 0 ? (task / total) * 100 : 0,
+        loginPct: total > 0 ? (login / total) * 100 : 0,
+        danmakuPct: total > 0 ? (danmaku / total) * 100 : 0,
+        commentPct: total > 0 ? (comment / total) * 100 : 0,
+        otherPct: total > 0 ? (other / total) * 100 : 0
+      };
+    }).sort((a, b) => b.total - a.total);
   }, [transactions]);
 
   const leader = data[0];
@@ -362,7 +297,7 @@ function PointsDynamics({
             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-500">
               <UserAvatar role={leader.role} profiles={profiles} className="w-5 h-5 text-[10px]" />
               <span className="text-xs text-stone-600 font-bold">
-                {leader.role} 本周领先 <span className="text-orange-500">+{leader.growth}</span>
+                {leader.role} 领先 <span className="text-orange-500">+{leader.total}</span>
               </span>
             </div>
           )}
@@ -379,6 +314,30 @@ function PointsDynamics({
             className="overflow-hidden"
           >
             <div className="px-6 pb-6 space-y-6 pt-2">
+              {/* Legend */}
+              <div className="flex flex-wrap gap-x-4 gap-y-2 justify-end">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-stone-900" />
+                  <span className="text-[10px] font-bold text-stone-500">任务</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
+                  <span className="text-[10px] font-bold text-stone-500">登录</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-blue-400" />
+                  <span className="text-[10px] font-bold text-stone-500">弹幕</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-orange-400" />
+                  <span className="text-[10px] font-bold text-stone-500">留言</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-sm bg-stone-200" />
+                  <span className="text-[10px] font-bold text-stone-500">其他</span>
+                </div>
+              </div>
+
               {data.map((item, idx) => (
                 <div key={item.role} className="flex flex-col gap-2">
                   <div className="flex items-center gap-3">
@@ -387,35 +346,42 @@ function PointsDynamics({
                     <div className="flex-grow">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs font-bold text-stone-700">{item.role}</span>
-                        <span className="text-xs font-black text-orange-500">+{item.growth}</span>
+                        <span className="text-xs font-black text-orange-500">+{item.total} pts</span>
                       </div>
-                      <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+                      <div className="h-3 bg-stone-100 rounded-full overflow-hidden flex">
                         <motion.div 
                           initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100, (item.growth / (Math.max(...data.map(d => d.growth), 1) || 1)) * 100)}%` }}
-                          className="h-full bg-stone-900 rounded-full"
+                          animate={{ width: `${item.taskPct}%` }}
+                          className="h-full bg-stone-900"
+                          title={`任务: ${item.task}pts`}
+                        />
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${item.loginPct}%` }}
+                          className="h-full bg-emerald-400"
+                          title={`登录: ${item.login}pts`}
+                        />
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${item.danmakuPct}%` }}
+                          className="h-full bg-blue-400"
+                          title={`弹幕: ${item.danmaku}pts`}
+                        />
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${item.commentPct}%` }}
+                          className="h-full bg-orange-400"
+                          title={`留言: ${item.comment}pts`}
+                        />
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${item.otherPct}%` }}
+                          className="h-full bg-stone-200"
+                          title={`其他: ${item.other}pts`}
                         />
                       </div>
                     </div>
                   </div>
-                  {item.growth > 0 && (
-                    <div className="ml-9 flex items-center gap-6">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-stone-400 uppercase font-black tracking-wider mb-1">任务贡献占比</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-emerald-500">{item.taskRatio}%</span>
-                          <div className="w-16 h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${item.taskRatio}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="h-6 w-px bg-stone-100" />
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-stone-400 uppercase font-black tracking-wider mb-1">其他来源</span>
-                        <span className="text-xs font-bold text-stone-500">{item.otherPoints} pts</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -495,7 +461,7 @@ function DanmakuBoard({
   const [selectedColor, setSelectedColor] = useState(MESSAGE_COLORS[0]);
   const [selectedFontSize, setSelectedFontSize] = useState('0.9rem');
   const [selectedSpeed, setSelectedSpeed] = useState(10);
-  const [selectedEffect, setSelectedEffect] = useState('default');
+  const [selectedEffect, setSelectedEffect] = useState<string[]>(['default']);
   const [selectedDuration, setSelectedDuration] = useState(24 * 60 * 60 * 1000);
   const [showPicker, setShowPicker] = useState(false);
   const [showAdminTools, setShowAdminTools] = useState(false);
@@ -761,25 +727,25 @@ function DanmakuBoard({
                           initial={{ left: '100%', x: 0, opacity: 0 }}
                           animate={{ 
                             x: '-150vw', 
-                            opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
-                            scale: msg.effect === 'zoom' ? [1, 1.2, 1] : (msg.effect === 'pulse' ? [1, 1.1, 1] : (msg.effect === 'bounce' ? [1, 1.1, 1] : 1)),
-                            rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
-                            y: msg.effect === 'wave' ? [0, -10, 10, 0] : (msg.effect === 'float' ? [0, -5, 0] : 0),
-                            skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
-                            filter: msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
-                            color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
+                            opacity: (msg.effect?.includes('blink') ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect?.includes('ghost') ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
+                            scale: msg.effect?.includes('zoom') ? [1, 1.2, 1] : (msg.effect?.includes('pulse') ? [1, 1.1, 1] : (msg.effect?.includes('bounce') ? [1, 1.1, 1] : 1)),
+                            rotate: msg.effect?.includes('rotate') ? [0, 360] : (msg.effect?.includes('shake') ? [0, 2, -2, 0] : (msg.effect?.includes('flip') ? [0, 180, 360] : 0)),
+                            y: msg.effect?.includes('wave') ? [0, -10, 10, 0] : (msg.effect?.includes('float') ? [0, -5, 0] : 0),
+                            skewX: msg.effect?.includes('skew') ? [0, 10, -10, 0] : 0,
+                            filter: msg.effect?.includes('blur') ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect?.includes('neon') ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect?.includes('fire') ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect?.includes('ice') ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
+                            color: msg.effect?.includes('rainbow') ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
                           }}
                           transition={{ 
                             x: { duration: finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
-                            opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
+                            opacity: { duration: (msg.effect?.includes('blink') || msg.effect?.includes('ghost')) ? 0.8 : 0.5, repeat: Infinity },
                             scale: { duration: 1, repeat: Infinity },
-                            rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
+                            rotate: { duration: msg.effect?.includes('rotate') ? 2 : 0.5, repeat: Infinity },
                             y: { duration: 2, repeat: Infinity },
                             skewX: { duration: 1, repeat: Infinity },
                             filter: { duration: 1.5, repeat: Infinity },
                             color: { duration: 3, repeat: Infinity }
                           }}
-                          className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''}`}
+                          className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect?.includes('glitch') ? 'animate-pulse' : ''}`}
                           style={{ 
                             top: `${top + offset}%`,
                             fontSize: msg.font_size || '0.9rem',
@@ -794,12 +760,6 @@ function DanmakuBoard({
                           <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
                           <span style={{ color: msg.color }}>{msg.content}</span>
                           <div className="flex items-center gap-1 ml-1">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); setReplyToId(msg.id); setInput(`@${msg.user} `); }}
-                              className="text-[9px] font-bold text-orange-500 hover:text-orange-600 transition-colors"
-                            >
-                              回复
-                            </button>
                             {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
                             <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
                               {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
@@ -825,54 +785,35 @@ function DanmakuBoard({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                {replyToId && (
-                  <div className="flex items-center justify-between bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100 mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-orange-600 font-bold">回复:</span>
-                      <span className="text-[10px] text-stone-500 truncate max-w-[200px]">
-                        {messages.find(m => m.id === replyToId)?.content || '加载中...'}
-                      </span>
-                    </div>
-                    <button 
-                      onClick={() => setReplyToId(undefined)}
-                      className="text-stone-400 hover:text-red-500 cursor-pointer"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <div className="relative flex-grow">
-                    <input 
-                      value={input}
-                      onChange={e => setInput(e.target.value)}
-                      onKeyPress={e => e.key === 'Enter' && input.trim() && (onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration, replyToId), setInput(''), setReplyToId(undefined))}
-                      placeholder={currentUser ? `作为 ${currentUser} 发送留言...` : "请先登录"}
-                      disabled={!currentUser}
-                      className="w-full pl-4 pr-12 py-3 bg-stone-50 border border-stone-100 rounded-2xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-inner"
-                    />
-                    <button 
-                      onClick={() => setShowPicker(!showPicker)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
-                    >
-                      <Palette className="w-4 h-4" />
-                    </button>
-                  </div>
+              <div className="flex gap-2">
+                <div className="relative flex-grow">
+                  <input 
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyPress={e => e.key === 'Enter' && input.trim() && (onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect.join(','), selectedDuration), setInput(''))}
+                    placeholder={currentUser ? `作为 ${currentUser} 发送留言...` : "请先登录"}
+                    disabled={!currentUser}
+                    className="w-full pl-4 pr-12 py-3 bg-stone-50 border border-stone-100 rounded-2xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-inner"
+                  />
                   <button 
-                    onClick={() => {
-                      if (input.trim()) {
-                        onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration, replyToId);
-                        setInput('');
-                        setReplyToId(undefined);
-                      }
-                    }}
-                    disabled={!currentUser || !input.trim()}
-                    className="px-6 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all disabled:opacity-50 shadow-md active:scale-95"
+                    onClick={() => setShowPicker(!showPicker)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
                   >
-                    发送
+                    <Palette className="w-4 h-4" />
                   </button>
                 </div>
+                <button 
+                  onClick={() => {
+                    if (input.trim()) {
+                      onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect.join(','), selectedDuration);
+                      setInput('');
+                    }
+                  }}
+                  disabled={!currentUser || !input.trim()}
+                  className="px-6 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all disabled:opacity-50 shadow-md active:scale-95"
+                >
+                  发送
+                </button>
               </div>
 
               <AnimatePresence>
@@ -933,6 +874,29 @@ function DanmakuBoard({
                                 className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedDuration === dur ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
                               >
                                 {dur === 10000 ? '10秒' : dur === 3600000 ? '1小时' : dur === -1 ? '永久' : '1天'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5 w-full">
+                          <label className="text-[10px] font-bold text-stone-400 uppercase">弹幕特效 (可多选)</label>
+                          <div className="flex flex-wrap gap-1">
+                            {['default', 'blink', 'ghost', 'zoom', 'pulse', 'bounce', 'rotate', 'shake', 'flip', 'wave', 'float', 'skew', 'blur', 'neon', 'fire', 'ice', 'rainbow', 'glitch'].map(eff => (
+                              <button 
+                                key={eff}
+                                onClick={() => {
+                                  if (eff === 'default') {
+                                    setSelectedEffect(['default']);
+                                  } else {
+                                    const newEffs = selectedEffect.includes(eff) 
+                                      ? selectedEffect.filter(e => e !== eff) 
+                                      : [...selectedEffect.filter(e => e !== 'default'), eff];
+                                    setSelectedEffect(newEffs.length === 0 ? ['default'] : newEffs);
+                                  }
+                                }}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedEffect.includes(eff) ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-500 border-stone-200'}`}
+                              >
+                                {eff === 'default' ? '无' : eff}
                               </button>
                             ))}
                           </div>
@@ -2062,7 +2026,7 @@ export default function App() {
     setEditingReward(null);
   };
 
-  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number, replyToId?: string) => {
+  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => {
     if (!currentUser) return;
 
     // Aggregation logic: check for duplicate content in last 5 seconds
@@ -2077,7 +2041,7 @@ export default function App() {
     }
     
     // Serialize extra fields into avatar since we can't alter DB schema easily
-    const extraData = JSON.stringify({ s: speed, e: effect, d: duration, r: replyToId });
+    const extraData = JSON.stringify({ s: speed, e: effect, d: duration });
     
     const newMsg = {
       id: generateId(),
@@ -2086,7 +2050,7 @@ export default function App() {
       date: new Date().toISOString(),
       likes: 0,
       avatar: extraData,
-      color: color || MESSAGE_COLORS[0],
+      color,
       font_size: fontSize || '0.9rem'
     };
     
@@ -2453,7 +2417,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-orange-50 font-sans text-stone-800 pb-20">
-      <TaskWarningBar goals={goals} />
       <header className="bg-white shadow-sm border-b border-orange-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 text-orange-600">
@@ -2673,7 +2636,7 @@ export default function App() {
                         onEdit={() => { setEditingGoal(goal); setIsModalOpen(true); }}
                         onDelete={() => { setGoalToDelete(goal.id); setIsDeleteModalOpen(true); }}
                         comments={goalComments.filter(c => c.goal_id === goal.id)}
-                        onAddComment={(content) => handleAddGoalComment(goal.id, content)}
+                        onAddComment={(content, image, replyTo) => handleAddGoalComment(goal.id, content, image, replyTo)}
                       />
                     ))}
                   </AnimatePresence>
@@ -4174,3 +4137,35 @@ function UserSettingsModal({ role, currentAvatar, onClose, onUpdateAvatar }: { r
     </div>
   );
 }
+
+/**
+ * ### 家庭积分管理系统 (Family Points System) - 产品需求文档 (PRD)
+ * 
+ * #### 1. 项目背景
+ * 旨在通过积分激励机制，促进家庭成员（爸爸、妈妈、哥哥、妹妹）之间的互动、任务完成和情感交流。
+ * 
+ * #### 2. 核心功能
+ * *   **任务管理**: 创建、分配、进度跟踪、多方确认。
+ * *   **积分体系**: 任务奖励、登录奖励、留言奖励、弹幕奖励。
+ * *   **勋章/成就**: 自动解锁成就并获得额外积分。
+ * *   **家庭留言板**: 实时弹幕、聚合显示、特效支持。
+ * *   **数据可视化**: 家庭总积分趋势、成员积分动态（来源细分）。
+ * *   **奖励兑换**: 个人及全家里程碑奖励。
+ * 
+ * #### 3. 最近更新 (v2.1.0)
+ * *   **UI 优化**:
+ *     *   “积分动态”改为堆叠条形图，清晰展示积分来源（任务、登录、弹幕、留言、其他）。
+ *     *   “家庭总积分”趋势图回归单曲线模式，突出任务贡献占比。
+ *     *   所有折叠面板（留言板、活动、动态）保持一致的 UI 风格。
+ * *   **弹幕增强**:
+ *     *   支持弹幕特效多选。
+ *     *   自动聚合 24 小时内的重复弹幕，减少冗余。
+ *     *   优化排行榜显示，确保领先者头像不被遮挡。
+ * *   **Bug 修复**:
+ *     *   修复了任务讨论区回复功能中的 `replyToId` 引用错误。
+ *     *   完善了任务留言的图片上传和表情选择功能。
+ * 
+ * #### 4. 技术栈
+ * *   Frontend: React, Tailwind CSS, Framer Motion, Recharts.
+ * *   Backend: Supabase (PostgreSQL, Real-time).
+ */
