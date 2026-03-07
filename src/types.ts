@@ -95,4 +95,5 @@ export type Message = {
   speed?: number;
   effect?: string;
   duration?: number;
+  replyToId?: string;
 };

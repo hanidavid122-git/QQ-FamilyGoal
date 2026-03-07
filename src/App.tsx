@@ -7,7 +7,7 @@ import {
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
   Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image as ImageIcon,
-  Shield, MessageSquare, ChevronUp, ChevronDown, Smile, BarChart3, LineChart as LineChartIcon
+  Shield, MessageSquare, ChevronUp, ChevronDown, Smile, BarChart3, LineChart as LineChartIcon, Palette
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart as RechartsLineChart, Line } from 'recharts';
 
@@ -147,62 +147,110 @@ function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
       return d.toISOString().split('T')[0];
     });
 
-    let cumulative = 0;
-    // Calculate initial points before the 7-day window
+    let cumulativeTask = 0;
+    let cumulativeOther = 0;
+
     const startDate = last7Days[0];
-    cumulative = transactions
-      .filter(t => t.date < startDate)
-      .reduce((sum, t) => sum + (t.type === 'earned' ? t.amount : -t.amount), 0);
+    const initialTxs = transactions.filter(t => t.date < startDate);
+    const initialTask = initialTxs
+      .filter(t => t.type === 'earned' && (t.reason.includes('目标') || t.reason.includes('完成')))
+      .reduce((sum, t) => sum + t.amount, 0);
+    const initialEarned = initialTxs
+      .filter(t => t.type === 'earned')
+      .reduce((sum, t) => sum + t.amount, 0);
+    const initialRedeemed = initialTxs
+      .filter(t => t.type === 'redeemed' || t.type === 'redeem')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    cumulativeTask = initialTask;
+    cumulativeOther = (initialEarned - initialTask) - initialRedeemed;
 
     return last7Days.map(date => {
-      const dayTotal = transactions
-        .filter(t => t.date.startsWith(date))
-        .reduce((sum, t) => sum + (t.type === 'earned' ? t.amount : -t.amount), 0);
-      cumulative += dayTotal;
+      const dayTxs = transactions.filter(t => t.date.startsWith(date));
+      const dayTask = dayTxs
+        .filter(t => t.type === 'earned' && (t.reason.includes('目标') || t.reason.includes('完成')))
+        .reduce((sum, t) => sum + t.amount, 0);
+      const dayOtherEarned = dayTxs
+        .filter(t => t.type === 'earned' && !(t.reason.includes('目标') || t.reason.includes('完成')))
+        .reduce((sum, t) => sum + t.amount, 0);
+      const dayRedeemed = dayTxs
+        .filter(t => t.type === 'redeemed' || t.type === 'redeem')
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      cumulativeTask += dayTask;
+      cumulativeOther += (dayOtherEarned - dayRedeemed);
+
       return {
         date: date.split('-').slice(1).join('/'),
-        points: cumulative
+        task: cumulativeTask,
+        other: Math.max(0, cumulativeOther),
+        total: Math.max(0, cumulativeTask + cumulativeOther)
       };
     });
   }, [transactions]);
 
+  const lastPoint = data[data.length - 1];
+  const taskRatio = lastPoint.total > 0 ? Math.round((lastPoint.task / lastPoint.total) * 100) : 0;
+
   return (
-    <div className="h-24 w-full mt-4">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
-          <defs>
-            <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <XAxis 
-            dataKey="date" 
-            axisLine={false} 
-            tickLine={false} 
-            tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.6)' }}
-            interval="preserveStartEnd"
-          />
-          <Area 
-            type="monotone" 
-            dataKey="points" 
-            stroke="#fbbf24" 
-            strokeWidth={2}
-            fillOpacity={1} 
-            fill="url(#colorPoints)" 
-            isAnimationActive={true}
-          />
-          <Tooltip 
-            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '10px' }}
-            labelStyle={{ fontWeight: 'bold', color: '#78716c' }}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+    <div className="w-full mt-4">
+      <div className="flex items-center justify-center gap-6 mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-1 bg-yellow-400 rounded-full" />
+          <span className="text-[10px] text-white/90 font-black">任务贡献 ({taskRatio}%)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-1 bg-white/40 rounded-full" />
+          <span className="text-[10px] text-white/70 font-bold">其他来源 ({100 - taskRatio}%)</span>
+        </div>
+      </div>
+      <div className="h-28 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsLineChart data={data}>
+            <XAxis 
+              dataKey="date" 
+              axisLine={false} 
+              tickLine={false} 
+              tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}
+              interval="preserveStartEnd"
+              padding={{ left: 10, right: 10 }}
+            />
+            <YAxis hide domain={['auto', 'auto']} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '16px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontSize: '11px' }}
+              labelStyle={{ fontWeight: 'black', color: '#1c1917', marginBottom: '4px' }}
+              itemStyle={{ padding: '2px 0' }}
+              formatter={(value: any, name: string) => [
+                <span className="font-bold">{value} pts</span>, 
+                <span className="text-stone-500">{name === 'task' ? '任务贡献' : '其他来源'}</span>
+              ]}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="other" 
+              stroke="rgba(255,255,255,0.4)" 
+              strokeWidth={2}
+              dot={{ r: 2, fill: 'rgba(255,255,255,0.4)', strokeWidth: 0 }}
+              activeDot={{ r: 4, fill: '#fff' }}
+              isAnimationActive={true}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="task" 
+              stroke="#fbbf24" 
+              strokeWidth={5}
+              dot={{ r: 3, fill: '#fbbf24', strokeWidth: 0 }}
+              activeDot={{ r: 6, fill: '#fbbf24', stroke: '#fff', strokeWidth: 2 }}
+              isAnimationActive={true}
+            />
+          </RechartsLineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
 
-function WeeklyPointsGrowth({ 
+function PointsDynamics({ 
   transactions, 
   profiles, 
   isExpanded, 
@@ -226,7 +274,6 @@ function WeeklyPointsGrowth({
       const roleTxs = transactions.filter(t => t.member === role && t.type === 'earned' && t.date >= last7Days[0]);
       const growth = roleTxs.reduce((sum, t) => sum + t.amount, 0);
       
-      // Calculate sources
       const taskPoints = roleTxs.filter(t => t.reason.includes('目标') || t.reason.includes('完成')).reduce((sum, t) => sum + t.amount, 0);
       const otherPoints = growth - taskPoints;
       const taskRatio = growth > 0 ? Math.round((taskPoints / growth) * 100) : 0;
@@ -235,19 +282,29 @@ function WeeklyPointsGrowth({
     }).sort((a, b) => b.growth - a.growth);
   }, [transactions]);
 
+  const leader = data[0];
+
   return (
-    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-stone-100 h-full">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-orange-500" />
-          <h3 className="text-sm font-bold text-stone-800">最近一周积分增长</h3>
+    <div className="bg-white/50 backdrop-blur-sm rounded-[2rem] border border-stone-100 overflow-hidden transition-all duration-300 shadow-sm">
+      <div 
+        onClick={onToggle}
+        className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-white/80 transition-colors"
+      >
+        <div className="flex items-center gap-2 text-stone-500">
+          <BarChart3 className="w-4 h-4" />
+          <span className="text-xs font-bold uppercase tracking-wider">积分动态</span>
         </div>
-        <button 
-          onClick={onToggle}
-          className="p-1.5 hover:bg-stone-50 rounded-lg transition-colors"
-        >
+        <div className="flex items-center gap-2">
+          {!isExpanded && leader && (
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-500">
+              <UserAvatar role={leader.role} profiles={profiles} className="w-5 h-5 text-[10px]" />
+              <span className="text-xs text-stone-600 font-bold">
+                {leader.role} 本周领先 <span className="text-orange-500">+{leader.growth}</span>
+              </span>
+            </div>
+          )}
           {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
-        </button>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -258,7 +315,7 @@ function WeeklyPointsGrowth({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="space-y-6">
+            <div className="px-6 pb-6 space-y-6 pt-2">
               {data.map((item, idx) => (
                 <div key={item.role} className="flex flex-col gap-2">
                   <div className="flex items-center gap-3">
@@ -269,29 +326,29 @@ function WeeklyPointsGrowth({
                         <span className="text-xs font-bold text-stone-700">{item.role}</span>
                         <span className="text-xs font-black text-orange-500">+{item.growth}</span>
                       </div>
-                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                      <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${Math.min(100, (item.growth / (Math.max(...data.map(d => d.growth), 1) || 1)) * 100)}%` }}
-                          className="h-full bg-orange-400 rounded-full"
+                          className="h-full bg-stone-900 rounded-full"
                         />
                       </div>
                     </div>
                   </div>
                   {item.growth > 0 && (
-                    <div className="ml-9 flex items-center gap-4">
+                    <div className="ml-9 flex items-center gap-6">
                       <div className="flex flex-col">
-                        <span className="text-[9px] text-stone-400 uppercase font-bold tracking-wider">任务贡献</span>
-                        <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-stone-400 uppercase font-black tracking-wider mb-1">任务贡献占比</span>
+                        <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-emerald-500">{item.taskRatio}%</span>
-                          <div className="w-12 h-1 bg-stone-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-400" style={{ width: `${item.taskRatio}%` }} />
+                          <div className="w-16 h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${item.taskRatio}%` }} />
                           </div>
                         </div>
                       </div>
                       <div className="h-6 w-px bg-stone-100" />
                       <div className="flex flex-col">
-                        <span className="text-[9px] text-stone-400 uppercase font-bold tracking-wider">其他来源</span>
+                        <span className="text-[9px] text-stone-400 uppercase font-black tracking-wider mb-1">其他来源</span>
                         <span className="text-xs font-bold text-stone-500">{item.otherPoints} pts</span>
                       </div>
                     </div>
@@ -302,19 +359,6 @@ function WeeklyPointsGrowth({
           </motion.div>
         )}
       </AnimatePresence>
-      
-      {!isExpanded && (
-        <div className="flex -space-x-2 overflow-hidden">
-          {data.slice(0, 3).map(item => (
-            <UserAvatar key={item.role} role={item.role} profiles={profiles} className="w-6 h-6 border-2 border-white" />
-          ))}
-          {data.length > 3 && (
-            <div className="w-6 h-6 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-[8px] font-bold text-stone-400">
-              +{data.length - 3}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -366,6 +410,8 @@ function DanmakuBoard({
   onDeleteMessage, 
   onToggleBullet, 
   isBulletEnabled, 
+  isExpanded,
+  onToggle,
   showControls = true 
 }: { 
   messages: Message[], 
@@ -378,6 +424,8 @@ function DanmakuBoard({
   onDeleteMessage?: (id: string | string[]) => void, 
   onToggleBullet?: () => void, 
   isBulletEnabled: boolean, 
+  isExpanded: boolean,
+  onToggle: () => void,
   showControls?: boolean 
 }) {
   const [input, setInput] = useState('');
@@ -418,7 +466,6 @@ function DanmakuBoard({
   }, [messages]);
 
   // Find the leader based on current points
-  const leader = memberStats.length > 0 ? [...memberStats].sort((a, b) => b.pts - a.pts)[0] : null;
   const sortedStats = [...memberStats].sort((a, b) => b.pts - a.pts);
   const maxPoints = Math.max(...sortedStats.map(s => s.pts), 100);
 
@@ -430,405 +477,391 @@ function DanmakuBoard({
   };
   
   return (
-    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-stone-100 mb-8">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex flex-col">
-          <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-orange-500" />
-            家庭留言板 & 积分排行
-          </h2>
-          <div className="flex items-center gap-3 mt-1">
-            <div className="text-[10px] font-medium text-stone-400">
-              历史弹幕: <span className="text-stone-600 font-bold">{totalMessages}</span>
-            </div>
-            <div className="text-[10px] font-medium text-stone-400">
-              活跃弹幕: <span className="text-orange-500 font-bold">{activeMessages}</span>
-            </div>
-          </div>
+    <div className="bg-white/50 backdrop-blur-sm rounded-[2rem] border border-stone-100 overflow-hidden transition-all duration-300 shadow-sm">
+      <div 
+        onClick={onToggle}
+        className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-white/80 transition-colors"
+      >
+        <div className="flex items-center gap-2 text-stone-500">
+          <MessageSquare className="w-4 h-4" />
+          <span className="text-xs font-bold uppercase tracking-wider">家庭留言板</span>
         </div>
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => onToggleBullet?.()}
-            className={`p-2 rounded-xl transition-all shadow-sm border ${isBulletEnabled ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-400 border-stone-200'}`}
-            title={isBulletEnabled ? '隐藏弹幕' : '显示弹幕'}
-          >
-            {isBulletEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-          </button>
-          {isAdmin && (
-            <div className="flex items-center gap-1">
-              <button 
-                onClick={() => setShowAdminTools(!showAdminTools)}
-                className={`p-2 rounded-xl transition-all ${showAdminTools ? 'bg-indigo-50 text-indigo-600' : 'bg-stone-100 text-stone-400'}`}
-                title="管理工具"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => { if(window.confirm('确定清空所有弹幕吗？')) onClearAll?.(); }}
-                className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-all"
-                title="清空弹幕"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+          {!isExpanded && (
+            <div className="flex items-center gap-3">
+              <div className="text-[10px] font-medium text-stone-400">
+                历史: <span className="text-stone-600 font-bold">{totalMessages}</span>
+              </div>
+              <div className="text-[10px] font-medium text-stone-400">
+                活跃: <span className="text-orange-500 font-bold">{activeMessages}</span>
+              </div>
             </div>
           )}
-          <div className="text-[10px] font-bold text-stone-400 bg-stone-50 px-3 py-1 rounded-full border border-stone-100">
-            实时同步中
-          </div>
+          {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
         </div>
       </div>
 
       <AnimatePresence>
-        {isAdmin && showAdminTools && (
-          <motion.div 
+        {isExpanded && (
+          <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden mb-4"
+            className="overflow-hidden"
           >
-            <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-4">
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider">
-                <Shield className="w-3 h-3" />
-                管理员批量删除工具
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex gap-2">
-                  <select 
-                    value={deleteRole}
-                    onChange={e => setDeleteRole(e.target.value)}
-                    className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
-                  >
-                    <option value="">按角色选择...</option>
-                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <button 
-                    onClick={() => {
-                      if(!deleteRole) return;
-                      const ids = messages.filter(m => m.user === deleteRole).map(m => m.id);
-                      if(ids.length > 0 && window.confirm(`确定删除 ${deleteRole} 的所有 ${ids.length} 条弹幕吗？`)) {
-                        onDeleteMessage?.(ids);
-                        setDeleteRole('');
-                      }
-                    }}
-                    className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                    disabled={!deleteRole}
-                  >
-                    删除该角色
-                  </button>
+            <div className="px-6 pb-6 pt-2">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="text-[10px] font-medium text-stone-400">
+                    历史弹幕: <span className="text-stone-600 font-bold">{totalMessages}</span>
+                  </div>
+                  <div className="text-[10px] font-medium text-stone-400">
+                    活跃弹幕: <span className="text-orange-500 font-bold">{activeMessages}</span>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); onToggleBullet?.(); }}
+                    className={`p-2 rounded-xl transition-all shadow-sm border ${isBulletEnabled ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-400 border-stone-200'}`}
+                    title={isBulletEnabled ? '隐藏弹幕' : '显示弹幕'}
+                  >
+                    {isBulletEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </button>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setShowAdminTools(!showAdminTools); }}
+                        className={`p-2 rounded-xl transition-all ${showAdminTools ? 'bg-indigo-50 text-indigo-600' : 'bg-stone-100 text-stone-400'}`}
+                        title="管理工具"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); if(window.confirm('确定清空所有弹幕吗？')) onClearAll?.(); }}
+                        className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-all"
+                        title="清空弹幕"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="text-[10px] font-bold text-stone-400 bg-stone-50 px-3 py-1 rounded-full border border-stone-100">
+                    实时同步中
+                  </div>
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {isAdmin && showAdminTools && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden mb-4"
+                  >
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-4">
+                      <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                        <Shield className="w-3 h-3" />
+                        管理员批量删除工具
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex gap-2">
+                          <select 
+                            value={deleteRole}
+                            onChange={e => setDeleteRole(e.target.value)}
+                            className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
+                          >
+                            <option value="">按角色选择...</option>
+                            {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                          <button 
+                            onClick={() => {
+                              if(!deleteRole) return;
+                              const ids = messages.filter(m => m.user === deleteRole).map(m => m.id);
+                              if(ids.length > 0 && window.confirm(`确定删除 ${deleteRole} 的所有 ${ids.length} 条弹幕吗？`)) {
+                                onDeleteMessage?.(ids);
+                                setDeleteRole('');
+                              }
+                            }}
+                            className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                            disabled={!deleteRole}
+                          >
+                            删除该角色
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input 
+                            type="date"
+                            value={deleteDate}
+                            onChange={e => setDeleteDate(e.target.value)}
+                            className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
+                          />
+                          <button 
+                            onClick={() => {
+                              if(!deleteDate) return;
+                              const ids = messages.filter(m => m.date.startsWith(deleteDate)).map(m => m.id);
+                              if(ids.length > 0 && window.confirm(`确定删除 ${deleteDate} 当天的所有 ${ids.length} 条弹幕吗？`)) {
+                                onDeleteMessage?.(ids);
+                                setDeleteDate('');
+                              } else if(ids.length === 0) {
+                                alert('该日期没有弹幕');
+                              }
+                            }}
+                            className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                            disabled={!deleteDate}
+                          >
+                            删除该日期
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-64 mb-6 border border-stone-100">
+                <div className="absolute inset-0" style={{ 
+                  backgroundImage: 'url("https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=1000&auto=format&fit=crop")',
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  opacity: 0.05
+                }}></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-white/60 to-transparent"></div>
+                
+                <div className="absolute inset-0 flex items-end pointer-events-none px-8 pb-12">
+                  <div className="flex justify-around items-end w-full h-full">
+                    {sortedStats.map((member, index) => {
+                      // Ensure visibility and leave room for avatar (max 55% height to avoid cutoff)
+                      const percent = Math.min(Math.max((member.pts / (maxPoints || 1)) * 55, 15), 55);
+                      const isLeader = index === 0 && member.pts > 0;
+                      
+                      return (
+                        <div key={member.role} className="relative h-full w-16 flex flex-col justify-end items-center">
+                          <motion.div 
+                            initial={{ height: '0%' }}
+                            animate={{ height: `${percent}%` }}
+                            transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
+                            className={`w-2 rounded-t-full absolute bottom-0 ${isLeader ? 'bg-orange-400' : 'bg-stone-200'}`}
+                          />
+                          <motion.div
+                            initial={{ bottom: '0%' }}
+                            animate={{ bottom: `${percent}%` }}
+                            transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
+                            className="absolute mb-2 flex flex-col items-center"
+                          >
+                            <div className="relative">
+                              <UserAvatar 
+                                role={member.role} 
+                                profiles={profiles} 
+                                className={`w-10 h-10 text-sm border-2 shadow-md ${isLeader ? 'border-orange-400' : 'border-white'}`} 
+                              />
+                              {isLeader && (
+                                <div className="absolute -top-3 -right-1 text-lg">👑</div>
+                              )}
+                            </div>
+                            <div className={`mt-1.5 text-xs font-black px-2 py-0.5 rounded-full shadow-sm ${isLeader ? 'bg-orange-500 text-white' : 'bg-stone-700 text-white'}`}>
+                              {member.pts}
+                            </div>
+                          </motion.div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="absolute inset-0 overflow-hidden">
+                  <AnimatePresence>
+                    {isBulletEnabled && aggregatedMessages.filter(msg => {
+                      if (!msg.duration || msg.duration === -1) return true;
+                      return (new Date(msg.date).getTime() + msg.duration) > Date.now();
+                    }).slice(-20).map((msg, i) => {
+                      const laneIndex = i % LANES_COUNT;
+                      const top = getLaneTop(laneIndex);
+                      const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
+                      const baseSpeed = msg.speed || 10;
+                      const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
+                      const finalSpeed = Math.max(5, baseSpeed + speedVariation);
+                      const createdDate = new Date(msg.date).getTime();
+                      const duration = msg.duration || (24 * 60 * 60 * 1000);
+                      const remainingMs = Math.max(0, createdDate + duration - Date.now());
+                      const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+                      const isLeader = sortedStats[0] && sortedStats[0].role === msg.user && sortedStats[0].pts > 0;
+                      const oneHourMs = 60 * 60 * 1000;
+                      let timeOpacity = 1;
+                      if (duration !== -1 && remainingMs <= oneHourMs) {
+                        timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
+                      }
+
+                      return (
+                        <motion.div
+                          key={msg.id}
+                          initial={{ left: '100%', x: 0, opacity: 0 }}
+                          animate={{ 
+                            x: '-150vw', 
+                            opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
+                            scale: msg.effect === 'zoom' ? [1, 1.2, 1] : (msg.effect === 'pulse' ? [1, 1.1, 1] : (msg.effect === 'bounce' ? [1, 1.1, 1] : 1)),
+                            rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
+                            y: msg.effect === 'wave' ? [0, -10, 10, 0] : (msg.effect === 'float' ? [0, -5, 0] : 0),
+                            skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
+                            filter: msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
+                            color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
+                          }}
+                          transition={{ 
+                            x: { duration: finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
+                            opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
+                            scale: { duration: 1, repeat: Infinity },
+                            rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
+                            y: { duration: 2, repeat: Infinity },
+                            skewX: { duration: 1, repeat: Infinity },
+                            filter: { duration: 1.5, repeat: Infinity },
+                            color: { duration: 3, repeat: Infinity }
+                          }}
+                          className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''}`}
+                          style={{ 
+                            top: `${top + offset}%`,
+                            fontSize: msg.font_size || '0.9rem',
+                          }}
+                        >
+                          <div className="relative">
+                            <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
+                            {isLeader && (
+                              <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
+                            )}
+                          </div>
+                          <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
+                          <span style={{ color: msg.color }}>{msg.content}</span>
+                          <div className="flex items-center gap-1 ml-1">
+                            {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
+                            <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
+                              {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
+                            </span>
+                            {isAdmin && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
+                                className="text-stone-300 hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                  {messages.length === 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
+                      暂无弹幕，快来发送第一条！
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <div className="relative flex-grow">
                   <input 
-                    type="date"
-                    value={deleteDate}
-                    onChange={e => setDeleteDate(e.target.value)}
-                    className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyPress={e => e.key === 'Enter' && input.trim() && (onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration), setInput(''))}
+                    placeholder={currentUser ? `作为 ${currentUser} 发送留言...` : "请先登录"}
+                    disabled={!currentUser}
+                    className="w-full pl-4 pr-12 py-3 bg-stone-50 border border-stone-100 rounded-2xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-inner"
                   />
                   <button 
-                    onClick={() => {
-                      if(!deleteDate) return;
-                      const ids = messages.filter(m => m.date.startsWith(deleteDate)).map(m => m.id);
-                      if(ids.length > 0 && window.confirm(`确定删除 ${deleteDate} 当天的所有 ${ids.length} 条弹幕吗？`)) {
-                        onDeleteMessage?.(ids);
-                        setDeleteDate('');
-                      } else if(ids.length === 0) {
-                        alert('该日期没有弹幕');
-                      }
-                    }}
-                    className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                    disabled={!deleteDate}
+                    onClick={() => setShowPicker(!showPicker)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
                   >
-                    删除该日期
+                    <Palette className="w-4 h-4" />
                   </button>
                 </div>
+                <button 
+                  onClick={() => {
+                    if (input.trim()) {
+                      onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration);
+                      setInput('');
+                    }
+                  }}
+                  disabled={!currentUser || !input.trim()}
+                  className="px-6 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all disabled:opacity-50 shadow-md active:scale-95"
+                >
+                  发送
+                </button>
               </div>
+
+              <AnimatePresence>
+                {showPicker && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden mt-4"
+                  >
+                    <div className="bg-stone-50 border border-stone-100 rounded-2xl p-4 space-y-4">
+                      <div className="flex flex-wrap gap-2">
+                        {MESSAGE_COLORS.map(color => (
+                          <button 
+                            key={color}
+                            onClick={() => setSelectedColor(color)}
+                            className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${selectedColor === color ? 'border-stone-900 scale-110' : 'border-white'}`}
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-stone-400 uppercase">字体大小</label>
+                          <div className="flex gap-1">
+                            {['0.7rem', '0.9rem', '1.2rem'].map(size => (
+                              <button 
+                                key={size}
+                                onClick={() => setSelectedFontSize(size)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedFontSize === size ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
+                              >
+                                {size === '0.7rem' ? '小' : size === '0.9rem' ? '中' : '大'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-stone-400 uppercase">移动速度</label>
+                          <div className="flex gap-1">
+                            {[15, 10, 6].map(speed => (
+                              <button 
+                                key={speed}
+                                onClick={() => setSelectedSpeed(speed)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedSpeed === speed ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
+                              >
+                                {speed === 15 ? '慢' : speed === 10 ? '中' : '快'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-stone-400 uppercase">显示时长</label>
+                          <div className="flex gap-1">
+                            {[10000, 3600000, 24 * 3600000, -1].map(dur => (
+                              <button 
+                                key={dur}
+                                onClick={() => setSelectedDuration(dur)}
+                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedDuration === dur ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
+                              >
+                                {dur === 10000 ? '10秒' : dur === 3600000 ? '1小时' : dur === -1 ? '永久' : '1天'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-
-      <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-64 mb-6 border border-stone-100">
-        {/* Background Image */}
-        <div className="absolute inset-0" style={{ 
-          backgroundImage: 'url("https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=1000&auto=format&fit=crop")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.05
-        }}></div>
-        <div className="absolute inset-0 bg-gradient-to-t from-white/60 to-transparent"></div>
-        
-        {/* Background Race Chart (More Visible) */}
-        <div className="absolute inset-0 flex items-end pointer-events-none px-8 pb-12">
-          <div className="flex justify-around items-end w-full h-full">
-            {sortedStats.map((member, index) => {
-              // Ensure visibility even with 0 points
-              const percent = Math.min(Math.max((member.pts / (maxPoints || 1)) * 100, 25), 100);
-              const isLeader = index === 0 && member.pts > 0;
-              
-              return (
-                <div key={member.role} className="relative h-full w-16 flex flex-col justify-end items-center">
-                  <motion.div 
-                    initial={{ height: '0%' }}
-                    animate={{ height: `${percent}%` }}
-                    transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
-                    className={`w-2 rounded-t-full absolute bottom-0 ${isLeader ? 'bg-orange-400' : 'bg-stone-200'}`}
-                  />
-                  <motion.div
-                    initial={{ bottom: '0%' }}
-                    animate={{ bottom: `${percent}%` }}
-                    transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
-                    className="absolute mb-2 flex flex-col items-center"
-                  >
-                    <div className="relative">
-                      <UserAvatar 
-                        role={member.role} 
-                        profiles={profiles} 
-                        className={`w-10 h-10 text-sm border-2 shadow-md ${isLeader ? 'border-orange-400' : 'border-white'}`} 
-                      />
-                      {isLeader && (
-                        <div className="absolute -top-3 -right-1 text-lg">👑</div>
-                      )}
-                    </div>
-                    <div className={`mt-1.5 text-xs font-black px-2 py-0.5 rounded-full shadow-sm ${isLeader ? 'bg-orange-500 text-white' : 'bg-stone-700 text-white'}`}>
-                      {member.pts}
-                    </div>
-                  </motion.div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="absolute inset-0 overflow-hidden">
-          <AnimatePresence>
-            {isBulletEnabled && aggregatedMessages.filter(msg => {
-              if (!msg.duration || msg.duration === -1) return true;
-              return (new Date(msg.date).getTime() + msg.duration) > Date.now();
-            }).slice(-20).map((msg, i) => {
-              // Assign to a lane based on index or ID
-              const laneIndex = i % LANES_COUNT;
-              const top = getLaneTop(laneIndex);
-              // Add a small random offset to the top within the lane
-              const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
-              
-              // Randomize speed slightly for each message
-              const baseSpeed = msg.speed || 10;
-              const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
-              const finalSpeed = Math.max(5, baseSpeed + speedVariation);
-
-              // Calculate remaining time and opacity
-              const createdDate = new Date(msg.date).getTime();
-              const duration = msg.duration || (24 * 60 * 60 * 1000);
-              const remainingMs = Math.max(0, createdDate + duration - Date.now());
-              const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-              const isLeader = leader && leader.role === msg.user && leader.pts > 0;
-
-              // Fading logic: start fading in the last hour
-              const oneHourMs = 60 * 60 * 1000;
-              let timeOpacity = 1;
-              if (duration !== -1 && remainingMs <= oneHourMs) {
-                timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
-              }
-
-              return (
-              <motion.div
-                key={msg.id}
-                initial={{ left: '100%', x: 0, opacity: 0 }}
-                animate={{ 
-                  x: '-150vw', 
-                  opacity: (msg.effect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
-                  scale: msg.effect === 'zoom' ? [1, 1.2, 1] : (msg.effect === 'pulse' ? [1, 1.1, 1] : (msg.effect === 'bounce' ? [1, 1.1, 1] : 1)),
-                  rotate: msg.effect === 'rotate' ? [0, 360] : (msg.effect === 'shake' ? [0, 2, -2, 0] : (msg.effect === 'flip' ? [0, 180, 360] : 0)),
-                  y: msg.effect === 'wave' ? [0, -10, 10, 0] : (msg.effect === 'float' ? [0, -5, 0] : 0),
-                  skewX: msg.effect === 'skew' ? [0, 10, -10, 0] : 0,
-                  filter: msg.effect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
-                  color: msg.effect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
-                }}
-                transition={{ 
-                  x: { duration: finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
-                  opacity: { duration: (msg.effect === 'blink' || msg.effect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
-                  scale: { duration: 1, repeat: Infinity },
-                  rotate: { duration: msg.effect === 'rotate' ? 2 : 0.5, repeat: Infinity },
-                  y: { duration: 2, repeat: Infinity },
-                  skewX: { duration: 1, repeat: Infinity },
-                  filter: { duration: 1.5, repeat: Infinity },
-                  color: { duration: 3, repeat: Infinity }
-                }}
-                className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect === 'glitch' ? 'animate-pulse' : ''}`}
-                style={{ 
-                  top: `${top + offset}%`,
-                  fontSize: msg.font_size || '0.9rem',
-                }}
-              >
-                <div className="relative">
-                  <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
-                  {isLeader && (
-                    <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
-                  )}
-                </div>
-                <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
-                <span style={{ color: msg.color }}>{msg.content}</span>
-                <div className="flex items-center gap-1 ml-1">
-                  {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
-                  <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
-                    {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
-                  </span>
-                  {isAdmin && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
-                      className="text-stone-300 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-              );
-            })}
-          </AnimatePresence>
-          {messages.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
-              暂无弹幕，快来发送第一条！
-            </div>
-          )}
-        </div>
-      </div>
-      
-      <form 
-        onSubmit={(e) => { 
-          e.preventDefault(); 
-          if(input.trim()) { 
-            onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration); 
-            setInput(''); 
-          } 
-        }}
-        className="space-y-3"
-      >
-        <div className="flex gap-2">
-          <div className="relative flex-grow">
-            <input 
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="发送弹幕留言..."
-              className="w-full pl-5 pr-12 py-3 bg-white border border-stone-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all"
-            />
-            <button 
-              type="button"
-              onClick={() => setShowPicker(!showPicker)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl bg-stone-100 flex items-center justify-center text-stone-400 hover:text-indigo-500 transition-colors"
-            >
-              <Heart className={`w-4 h-4 ${showPicker ? 'fill-indigo-500 text-indigo-500' : ''}`} />
-            </button>
-          </div>
-          <button 
-            type="submit" 
-            disabled={!input.trim() || !currentUser}
-            className="px-6 py-3 bg-indigo-500 text-white rounded-2xl font-bold shadow-md hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <Upload className="w-4 h-4 rotate-90" />
-            发送
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {showPicker && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-4">
-                    <div>
-                      <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">选择颜色</div>
-                      <div className="flex flex-wrap gap-2">
-                        {MESSAGE_COLORS.map(c => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => setSelectedColor(c)}
-                            className={`w-6 h-6 rounded-full border-2 transition-all ${selectedColor === c ? 'border-indigo-500 scale-110' : 'border-transparent'}`}
-                            style={{ backgroundColor: c }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">字体大小</div>
-                      <div className="flex gap-2">
-                        {['0.8rem', '0.9rem', '1.1rem', '1.3rem'].map(s => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => setSelectedFontSize(s)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${selectedFontSize === s ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
-                          >
-                            {s === '0.8rem' ? '小' : s === '0.9rem' ? '中' : s === '1.1rem' ? '大' : '特大'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-4 border-t border-stone-100 pt-4">
-                    <div>
-                        <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">速度</div>
-                        <div className="flex gap-2">
-                            {DANMAKU_SPEEDS.map(s => (
-                                <button
-                                    key={s.label}
-                                    type="button"
-                                    onClick={() => setSelectedSpeed(s.value)}
-                                    className={`flex-1 py-1 rounded-lg text-xs font-bold border transition-all ${selectedSpeed === s.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
-                                >
-                                    {s.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">特效</div>
-                        <div className="flex gap-2 flex-wrap">
-                            {DANMAKU_EFFECTS.map(e => (
-                                <button
-                                    key={e.value}
-                                    type="button"
-                                    onClick={() => setSelectedEffect(e.value)}
-                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${selectedEffect === e.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
-                                >
-                                    {e.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <div className="text-xs font-bold text-stone-400 mb-2 uppercase tracking-wider">时长</div>
-                        <div className="flex gap-2 flex-wrap">
-                            {DANMAKU_DURATIONS.map(d => (
-                                <button
-                                    key={d.label}
-                                    type="button"
-                                    onClick={() => setSelectedDuration(d.value)}
-                                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${selectedDuration === d.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
-                                >
-                                    {d.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </form>
     </div>
   );
 }
+
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -2397,44 +2430,20 @@ export default function App() {
           <FamilyHero familyPts={familyStats.pts} nextMilestone={nextFamilyReward.cost} nextRewardName={nextFamilyReward.name} transactions={txs} />
 
           {/* 2. Danmaku Board with Integrated Race Chart */}
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-orange-500" />
-              家庭留言板
-            </h2>
-            <button 
-              onClick={() => setShowDanmakuBoard(!showDanmakuBoard)}
-              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-95"
-            >
-              <ImageIcon className="w-3.5 h-3.5" />
-              {showDanmakuBoard ? '隐藏留言板' : '显示留言板'}
-              {showDanmakuBoard ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-
-          <AnimatePresence>
-            {showDanmakuBoard && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <DanmakuBoard 
-                  messages={messages} 
-                  onSend={handleAddMessage} 
-                  currentUser={currentUser} 
-                  profiles={profiles} 
-                  memberStats={memberStats} 
-                  isAdmin={isAdmin}
-                  onClearAll={handleClearAllMessages}
-                  onDeleteMessage={handleDeleteMessage}
-                  onToggleBullet={() => setIsBulletEnabled(!isBulletEnabled)}
-                  isBulletEnabled={isBulletEnabled}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <DanmakuBoard 
+            messages={messages} 
+            onSend={handleAddMessage} 
+            currentUser={currentUser} 
+            profiles={profiles} 
+            memberStats={memberStats} 
+            isAdmin={isAdmin}
+            onClearAll={handleClearAllMessages}
+            onDeleteMessage={handleDeleteMessage}
+            onToggleBullet={() => setIsBulletEnabled(!isBulletEnabled)}
+            isBulletEnabled={isBulletEnabled}
+            isExpanded={showDanmakuBoard}
+            onToggle={() => setShowDanmakuBoard(!showDanmakuBoard)}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <RecentActivity 
@@ -2445,7 +2454,7 @@ export default function App() {
               tableMissing={activitiesTableMissing}
               isAdmin={isAdmin}
             />
-            <WeeklyPointsGrowth 
+            <PointsDynamics 
               transactions={txs} 
               profiles={profiles} 
               isExpanded={isWeeklyGrowthExpanded}
