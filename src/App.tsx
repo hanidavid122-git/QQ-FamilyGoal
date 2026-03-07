@@ -6,8 +6,10 @@ import {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image as ImageIcon
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image as ImageIcon,
+  Shield, MessageSquare, ChevronUp, ChevronDown, Smile, BarChart3, LineChart as LineChartIcon
 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart as RechartsLineChart, Line } from 'recharts';
 
 import { 
   Priority, Goal, Transaction, Achievement, Reward, FilterType, 
@@ -137,7 +139,187 @@ function LineChart({ data }: { data: number[] }) {
 
 const MESSAGES_KEY = 'family_goals_messages';
 
-function FamilyHero({ familyPts, nextMilestone, nextRewardName }: { familyPts: number, nextMilestone: number, nextRewardName: string }) {
+function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
+  const data = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+    });
+
+    let cumulative = 0;
+    // Calculate initial points before the 7-day window
+    const startDate = last7Days[0];
+    cumulative = transactions
+      .filter(t => t.date < startDate)
+      .reduce((sum, t) => sum + (t.type === 'earned' ? t.amount : -t.amount), 0);
+
+    return last7Days.map(date => {
+      const dayTotal = transactions
+        .filter(t => t.date.startsWith(date))
+        .reduce((sum, t) => sum + (t.type === 'earned' ? t.amount : -t.amount), 0);
+      cumulative += dayTotal;
+      return {
+        date: date.split('-').slice(1).join('/'),
+        points: cumulative
+      };
+    });
+  }, [transactions]);
+
+  return (
+    <div className="h-24 w-full mt-4">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <XAxis 
+            dataKey="date" 
+            axisLine={false} 
+            tickLine={false} 
+            tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.6)' }}
+            interval="preserveStartEnd"
+          />
+          <Area 
+            type="monotone" 
+            dataKey="points" 
+            stroke="#fbbf24" 
+            strokeWidth={2}
+            fillOpacity={1} 
+            fill="url(#colorPoints)" 
+            isAnimationActive={true}
+          />
+          <Tooltip 
+            contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '10px' }}
+            labelStyle={{ fontWeight: 'bold', color: '#78716c' }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function WeeklyPointsGrowth({ 
+  transactions, 
+  profiles, 
+  isExpanded, 
+  onToggle 
+}: { 
+  transactions: Transaction[], 
+  profiles: Profile[], 
+  isExpanded: boolean, 
+  onToggle: () => void 
+}) {
+  const data = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+    });
+
+    const roles = ROLES.filter(r => r !== '管理员');
+    
+    return roles.map(role => {
+      const roleTxs = transactions.filter(t => t.member === role && t.type === 'earned' && t.date >= last7Days[0]);
+      const growth = roleTxs.reduce((sum, t) => sum + t.amount, 0);
+      
+      // Calculate sources
+      const taskPoints = roleTxs.filter(t => t.reason.includes('目标') || t.reason.includes('完成')).reduce((sum, t) => sum + t.amount, 0);
+      const otherPoints = growth - taskPoints;
+      const taskRatio = growth > 0 ? Math.round((taskPoints / growth) * 100) : 0;
+
+      return { role, growth, taskPoints, otherPoints, taskRatio };
+    }).sort((a, b) => b.growth - a.growth);
+  }, [transactions]);
+
+  return (
+    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-stone-100 h-full">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-orange-500" />
+          <h3 className="text-sm font-bold text-stone-800">最近一周积分增长</h3>
+        </div>
+        <button 
+          onClick={onToggle}
+          className="p-1.5 hover:bg-stone-50 rounded-lg transition-colors"
+        >
+          {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-6">
+              {data.map((item, idx) => (
+                <div key={item.role} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 text-xs font-bold text-stone-400">0{idx + 1}</div>
+                    <UserAvatar role={item.role} profiles={profiles} className="w-8 h-8" />
+                    <div className="flex-grow">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-bold text-stone-700">{item.role}</span>
+                        <span className="text-xs font-black text-orange-500">+{item.growth}</span>
+                      </div>
+                      <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, (item.growth / (Math.max(...data.map(d => d.growth), 1) || 1)) * 100)}%` }}
+                          className="h-full bg-orange-400 rounded-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  {item.growth > 0 && (
+                    <div className="ml-9 flex items-center gap-4">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-stone-400 uppercase font-bold tracking-wider">任务贡献</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-emerald-500">{item.taskRatio}%</span>
+                          <div className="w-12 h-1 bg-stone-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-400" style={{ width: `${item.taskRatio}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="h-6 w-px bg-stone-100" />
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-stone-400 uppercase font-bold tracking-wider">其他来源</span>
+                        <span className="text-xs font-bold text-stone-500">{item.otherPoints} pts</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {!isExpanded && (
+        <div className="flex -space-x-2 overflow-hidden">
+          {data.slice(0, 3).map(item => (
+            <UserAvatar key={item.role} role={item.role} profiles={profiles} className="w-6 h-6 border-2 border-white" />
+          ))}
+          {data.length > 3 && (
+            <div className="w-6 h-6 rounded-full bg-stone-100 border-2 border-white flex items-center justify-center text-[8px] font-bold text-stone-400">
+              +{data.length - 3}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FamilyHero({ familyPts, nextMilestone, nextRewardName, transactions }: { familyPts: number, nextMilestone: number, nextRewardName: string, transactions: Transaction[] }) {
   const progress = Math.min(100, (familyPts / nextMilestone) * 100);
   return (
     <div className="bg-gradient-to-br from-orange-400 to-red-500 rounded-[2rem] p-8 text-white shadow-xl mb-8 relative overflow-hidden">
@@ -149,10 +331,13 @@ function FamilyHero({ familyPts, nextMilestone, nextRewardName }: { familyPts: n
           <Crown className="w-4 h-4 text-yellow-300" />
           家庭总积分
         </div>
-        <div className="text-7xl font-black tracking-tighter mb-4 drop-shadow-sm">
+        <div className="text-7xl font-black tracking-tighter mb-2 drop-shadow-sm">
           {familyPts}
         </div>
-        <div className="w-full max-w-md bg-black/20 h-3 rounded-full overflow-hidden backdrop-blur-sm mb-2">
+        
+        <FamilyGrowthChart transactions={transactions} />
+
+        <div className="w-full max-w-md bg-black/20 h-3 rounded-full overflow-hidden backdrop-blur-sm mb-2 mt-4">
           <div 
             className="h-full bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-1000"
             style={{ width: `${progress}%` }}
@@ -170,7 +355,31 @@ function FamilyHero({ familyPts, nextMilestone, nextRewardName }: { familyPts: n
 
 
 
-function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, isAdmin, onClearAll, onDeleteMessage, onToggleBullet, isBulletEnabled }: { messages: Message[], onSend: (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => void, currentUser: string | null, profiles: Profile[], memberStats: any[], isAdmin: boolean, onClearAll?: () => void, onDeleteMessage?: (id: string) => void, onToggleBullet?: () => void, isBulletEnabled: boolean }) {
+function DanmakuBoard({ 
+  messages, 
+  onSend, 
+  currentUser, 
+  profiles, 
+  memberStats, 
+  isAdmin, 
+  onClearAll, 
+  onDeleteMessage, 
+  onToggleBullet, 
+  isBulletEnabled, 
+  showControls = true 
+}: { 
+  messages: Message[], 
+  onSend: (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => void, 
+  currentUser: string | null, 
+  profiles: Profile[], 
+  memberStats: any[], 
+  isAdmin: boolean, 
+  onClearAll?: () => void, 
+  onDeleteMessage?: (id: string | string[]) => void, 
+  onToggleBullet?: () => void, 
+  isBulletEnabled: boolean, 
+  showControls?: boolean 
+}) {
   const [input, setInput] = useState('');
   const [selectedColor, setSelectedColor] = useState(MESSAGE_COLORS[0]);
   const [selectedFontSize, setSelectedFontSize] = useState('0.9rem');
@@ -178,6 +387,9 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, is
   const [selectedEffect, setSelectedEffect] = useState('default');
   const [selectedDuration, setSelectedDuration] = useState(24 * 60 * 60 * 1000);
   const [showPicker, setShowPicker] = useState(false);
+  const [showAdminTools, setShowAdminTools] = useState(false);
+  const [deleteRole, setDeleteRole] = useState('');
+  const [deleteDate, setDeleteDate] = useState('');
 
   // Stats
   const totalMessages = messages.length;
@@ -185,6 +397,25 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, is
     if (!msg.duration || msg.duration === -1) return true;
     return (new Date(msg.date).getTime() + msg.duration) > Date.now();
   }).length;
+
+  // Danmaku Aggregation Logic (24h window)
+  const aggregatedMessages = useMemo(() => {
+    const result: Message[] = [];
+    const sorted = [...messages].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    for (const msg of sorted) {
+      const date = new Date(msg.date).getTime();
+      const isDuplicate = result.some(m => 
+        m.content.trim() === msg.content.trim() && 
+        Math.abs(new Date(m.date).getTime() - date) < 24 * 60 * 60 * 1000
+      );
+      
+      if (!isDuplicate) {
+        result.push(msg);
+      }
+    }
+    return result;
+  }, [messages]);
 
   // Find the leader based on current points
   const leader = memberStats.length > 0 ? [...memberStats].sort((a, b) => b.pts - a.pts)[0] : null;
@@ -199,88 +430,165 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, is
   };
   
   return (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-4 px-2">
+    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-stone-100 mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex flex-col">
           <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-blue-500" />
-            留言板 & 积分排行
+            <MessageSquare className="w-5 h-5 text-orange-500" />
+            家庭留言板 & 积分排行
           </h2>
           <div className="flex items-center gap-3 mt-1">
             <div className="text-[10px] font-medium text-stone-400">
               历史弹幕: <span className="text-stone-600 font-bold">{totalMessages}</span>
             </div>
             <div className="text-[10px] font-medium text-stone-400">
-              活跃弹幕: <span className="text-blue-500 font-bold">{activeMessages}</span>
+              活跃弹幕: <span className="text-orange-500 font-bold">{activeMessages}</span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button 
+            onClick={() => onToggleBullet?.()}
+            className={`p-2 rounded-xl transition-all shadow-sm border ${isBulletEnabled ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-400 border-stone-200'}`}
+            title={isBulletEnabled ? '隐藏弹幕' : '显示弹幕'}
+          >
+            {isBulletEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+          </button>
           {isAdmin && (
-            <div className="flex items-center gap-1 mr-2">
+            <div className="flex items-center gap-1">
               <button 
-                onClick={() => onToggleBullet?.()}
-                className={`p-1.5 rounded-lg transition-colors ${isBulletEnabled ? 'bg-blue-50 text-blue-600' : 'bg-stone-100 text-stone-400'}`}
-                title={isBulletEnabled ? '关闭弹幕' : '开启弹幕'}
+                onClick={() => setShowAdminTools(!showAdminTools)}
+                className={`p-2 rounded-xl transition-all ${showAdminTools ? 'bg-indigo-50 text-indigo-600' : 'bg-stone-100 text-stone-400'}`}
+                title="管理工具"
               >
-                <Eye className="w-4 h-4" />
+                <Settings className="w-4 h-4" />
               </button>
               <button 
                 onClick={() => { if(window.confirm('确定清空所有弹幕吗？')) onClearAll?.(); }}
-                className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-all"
                 title="清空弹幕"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
           )}
-          <div className="text-[10px] font-medium text-stone-400 bg-stone-100 px-2 py-0.5 rounded-full">
+          <div className="text-[10px] font-bold text-stone-400 bg-stone-50 px-3 py-1 rounded-full border border-stone-100">
             实时同步中
           </div>
         </div>
       </div>
-      <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-64 mb-4 border border-stone-100">
+
+      <AnimatePresence>
+        {isAdmin && showAdminTools && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                <Shield className="w-3 h-3" />
+                管理员批量删除工具
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex gap-2">
+                  <select 
+                    value={deleteRole}
+                    onChange={e => setDeleteRole(e.target.value)}
+                    className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
+                  >
+                    <option value="">按角色选择...</option>
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <button 
+                    onClick={() => {
+                      if(!deleteRole) return;
+                      const ids = messages.filter(m => m.user === deleteRole).map(m => m.id);
+                      if(ids.length > 0 && window.confirm(`确定删除 ${deleteRole} 的所有 ${ids.length} 条弹幕吗？`)) {
+                        onDeleteMessage?.(ids);
+                        setDeleteRole('');
+                      }
+                    }}
+                    className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                    disabled={!deleteRole}
+                  >
+                    删除该角色
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input 
+                    type="date"
+                    value={deleteDate}
+                    onChange={e => setDeleteDate(e.target.value)}
+                    className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
+                  />
+                  <button 
+                    onClick={() => {
+                      if(!deleteDate) return;
+                      const ids = messages.filter(m => m.date.startsWith(deleteDate)).map(m => m.id);
+                      if(ids.length > 0 && window.confirm(`确定删除 ${deleteDate} 当天的所有 ${ids.length} 条弹幕吗？`)) {
+                        onDeleteMessage?.(ids);
+                        setDeleteDate('');
+                      } else if(ids.length === 0) {
+                        alert('该日期没有弹幕');
+                      }
+                    }}
+                    className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
+                    disabled={!deleteDate}
+                  >
+                    删除该日期
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-64 mb-6 border border-stone-100">
         {/* Background Image */}
         <div className="absolute inset-0" style={{ 
           backgroundImage: 'url("https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=1000&auto=format&fit=crop")',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          opacity: 0.1
+          opacity: 0.05
         }}></div>
-        <div className="absolute inset-0 bg-gradient-to-t from-white/40 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-white/60 to-transparent"></div>
         
-        {/* Background Race Chart (Faded) */}
-        <div className="absolute inset-0 flex items-end opacity-30 pointer-events-none px-8 pb-12">
-          <div className="absolute inset-0 flex items-end opacity-10">
-             <svg viewBox="0 0 400 200" preserveAspectRatio="none" className="w-full h-full text-stone-300 fill-current">
-               <path d="M0 200 L150 50 L250 120 L350 20 L400 200 Z" />
-             </svg>
-          </div>
+        {/* Background Race Chart (More Visible) */}
+        <div className="absolute inset-0 flex items-end pointer-events-none px-8 pb-12">
           <div className="flex justify-around items-end w-full h-full">
             {sortedStats.map((member, index) => {
-              const percent = Math.min(Math.max((member.pts / maxPoints) * 100, 10), 100);
+              // Ensure visibility even with 0 points
+              const percent = Math.min(Math.max((member.pts / (maxPoints || 1)) * 100, 25), 100);
               const isLeader = index === 0 && member.pts > 0;
               
               return (
-                <div key={member.role} className="relative h-full w-12 flex flex-col justify-end items-center">
+                <div key={member.role} className="relative h-full w-16 flex flex-col justify-end items-center">
                   <motion.div 
                     initial={{ height: '0%' }}
                     animate={{ height: `${percent}%` }}
                     transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
-                    className={`w-1 rounded-t-full absolute bottom-0 ${isLeader ? 'bg-yellow-400' : 'bg-stone-200'}`}
+                    className={`w-2 rounded-t-full absolute bottom-0 ${isLeader ? 'bg-orange-400' : 'bg-stone-200'}`}
                   />
                   <motion.div
                     initial={{ bottom: '0%' }}
                     animate={{ bottom: `${percent}%` }}
                     transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
-                    className="absolute mb-1 flex flex-col items-center"
+                    className="absolute mb-2 flex flex-col items-center"
                   >
-                    <UserAvatar 
-                      role={member.role} 
-                      profiles={profiles} 
-                      className={`w-8 h-8 text-sm border-2 ${isLeader ? 'border-yellow-400' : 'border-white'}`} 
-                    />
-                    <div className={`mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isLeader ? 'bg-yellow-400 text-yellow-900' : 'bg-stone-700 text-white'}`}>
+                    <div className="relative">
+                      <UserAvatar 
+                        role={member.role} 
+                        profiles={profiles} 
+                        className={`w-10 h-10 text-sm border-2 shadow-md ${isLeader ? 'border-orange-400' : 'border-white'}`} 
+                      />
+                      {isLeader && (
+                        <div className="absolute -top-3 -right-1 text-lg">👑</div>
+                      )}
+                    </div>
+                    <div className={`mt-1.5 text-xs font-black px-2 py-0.5 rounded-full shadow-sm ${isLeader ? 'bg-orange-500 text-white' : 'bg-stone-700 text-white'}`}>
                       {member.pts}
                     </div>
                   </motion.div>
@@ -292,7 +600,7 @@ function DanmakuBoard({ messages, onSend, currentUser, profiles, memberStats, is
 
         <div className="absolute inset-0 overflow-hidden">
           <AnimatePresence>
-            {isBulletEnabled && messages.filter(msg => {
+            {isBulletEnabled && aggregatedMessages.filter(msg => {
               if (!msg.duration || msg.duration === -1) return true;
               return (new Date(msg.date).getTime() + msg.duration) > Date.now();
             }).slice(-20).map((msg, i) => {
@@ -582,7 +890,9 @@ export default function App() {
   const [profilesTableMissing, setProfilesTableMissing] = useState(false);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isActivitiesExpanded, setIsActivitiesExpanded] = useState(false);
+  const [isWeeklyGrowthExpanded, setIsWeeklyGrowthExpanded] = useState(false);
   const [activitiesTableMissing, setActivitiesTableMissing] = useState(false);
+  const [showDanmakuBoard, setShowDanmakuBoard] = useState(true);
 
   const addActivity = async (type: ActivityType, content: string, metadata?: any, userOverride?: string) => {
     const user = userOverride || currentUser;
@@ -1210,7 +1520,7 @@ export default function App() {
     }
   };
 
-  const handleAddGoalComment = async (goalId: string, content: string) => {
+  const handleAddGoalComment = async (goalId: string, content: string, image?: string, replyTo?: string) => {
     if (!currentUser) return;
     const newCommentId = generateId();
     const newCommentDate = new Date().toISOString();
@@ -1219,7 +1529,9 @@ export default function App() {
       goal_id: goalId,
       user: currentUser,
       content,
-      date: newCommentDate
+      date: newCommentDate,
+      image,
+      replyTo
     };
 
     // Optimistic Update
@@ -1231,7 +1543,9 @@ export default function App() {
         goal_id: goalId,
         user: currentUser,
         content,
-        date: newCommentDate
+        date: newCommentDate,
+        image,
+        reply_to: replyTo
       });
       if (error) throw error;
       
@@ -1278,7 +1592,9 @@ export default function App() {
       if (!goal) return;
       
       const confirmations = { ...(goal.confirmations || {}), [member]: true };
-      const allConfirmed = ROLES.every(r => confirmations[r]);
+      const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
+      const requiredConfirmers = assignees.length > 0 ? assignees : ['爸爸'];
+      const allConfirmed = requiredConfirmers.every(r => confirmations[r]);
       const updates: any = { confirmations };
       
       if (allConfirmed && !goal.completedAt) {
@@ -1627,6 +1943,17 @@ export default function App() {
 
   const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => {
     if (!currentUser) return;
+
+    // Aggregation logic: check for duplicate content in last 5 seconds
+    const recentDuplicate = messages.find(m => 
+      m.content.trim() === content.trim() && 
+      (Date.now() - new Date(m.date).getTime()) < 5000
+    );
+
+    if (recentDuplicate) {
+      showToast('弹幕聚合中...', 'success');
+      return;
+    }
     
     // Serialize extra fields into avatar since we can't alter DB schema easily
     const extraData = JSON.stringify({ s: speed, e: effect, d: duration });
@@ -1710,11 +2037,15 @@ export default function App() {
     }
   };
 
-  const handleDeleteMessage = async (id: string) => {
+  const handleDeleteMessage = async (id: string | string[]) => {
     try {
-      const { error } = await supabase.from('messages').delete().eq('id', id);
+      const ids = Array.isArray(id) ? id : [id];
+      const { error } = await supabase.from('messages').delete().in('id', ids);
       if (error) throw error;
-      showToast('弹幕已删除');
+      
+      // Optimistic update
+      setMessages(prev => prev.filter(m => !ids.includes(m.id)));
+      showToast(ids.length > 1 ? `已删除 ${ids.length} 条弹幕` : '弹幕已删除');
     } catch (e) {
       console.error(e);
       showToast('删除失败', 'error');
@@ -2063,30 +2394,64 @@ export default function App() {
         <main className="max-w-5xl mx-auto px-4 pb-24 space-y-8">
           
           {/* 1. Family Hero Section (Total Points) */}
-          <FamilyHero familyPts={familyStats.pts} nextMilestone={nextFamilyReward.cost} nextRewardName={nextFamilyReward.name} />
+          <FamilyHero familyPts={familyStats.pts} nextMilestone={nextFamilyReward.cost} nextRewardName={nextFamilyReward.name} transactions={txs} />
 
           {/* 2. Danmaku Board with Integrated Race Chart */}
-          <DanmakuBoard 
-            messages={messages} 
-            onSend={handleAddMessage} 
-            currentUser={currentUser} 
-            profiles={profiles} 
-            memberStats={memberStats} 
-            isAdmin={isAdmin}
-            onClearAll={handleClearAllMessages}
-            onDeleteMessage={handleDeleteMessage}
-            onToggleBullet={() => setIsBulletEnabled(!isBulletEnabled)}
-            isBulletEnabled={isBulletEnabled}
-          />
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-orange-500" />
+              家庭留言板
+            </h2>
+            <button 
+              onClick={() => setShowDanmakuBoard(!showDanmakuBoard)}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full font-medium text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-95"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              {showDanmakuBoard ? '隐藏留言板' : '显示留言板'}
+              {showDanmakuBoard ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
 
-          <RecentActivity 
-            activities={activities} 
-            profiles={profiles} 
-            isExpanded={isActivitiesExpanded} 
-            onToggle={() => setIsActivitiesExpanded(!isActivitiesExpanded)} 
-            tableMissing={activitiesTableMissing}
-            isAdmin={isAdmin}
-          />
+          <AnimatePresence>
+            {showDanmakuBoard && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <DanmakuBoard 
+                  messages={messages} 
+                  onSend={handleAddMessage} 
+                  currentUser={currentUser} 
+                  profiles={profiles} 
+                  memberStats={memberStats} 
+                  isAdmin={isAdmin}
+                  onClearAll={handleClearAllMessages}
+                  onDeleteMessage={handleDeleteMessage}
+                  onToggleBullet={() => setIsBulletEnabled(!isBulletEnabled)}
+                  isBulletEnabled={isBulletEnabled}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <RecentActivity 
+              activities={activities} 
+              profiles={profiles} 
+              isExpanded={isActivitiesExpanded} 
+              onToggle={() => setIsActivitiesExpanded(!isActivitiesExpanded)} 
+              tableMissing={activitiesTableMissing}
+              isAdmin={isAdmin}
+            />
+            <WeeklyPointsGrowth 
+              transactions={txs} 
+              profiles={profiles} 
+              isExpanded={isWeeklyGrowthExpanded}
+              onToggle={() => setIsWeeklyGrowthExpanded(!isWeeklyGrowthExpanded)}
+            />
+          </div>
 
           {/* 3. Personal Dashboard (If logged in) */}
           {currentUser && (
@@ -2868,13 +3233,18 @@ function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
   );
 }
 
-function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone, onConfirm, onEdit, onDelete, comments, onAddComment }: { goal: Goal, currentUser: string, profiles: Profile[], onUpdateProgress: (val: number) => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void, comments: GoalComment[], onAddComment: (content: string) => void }) {
+function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone, onConfirm, onEdit, onDelete, comments, onAddComment }: { goal: Goal, currentUser: string, profiles: Profile[], onUpdateProgress: (val: number) => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void, comments: GoalComment[], onAddComment: (content: string, image?: string, replyTo?: string) => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAllComments, setShowAllComments] = useState(false);
   const [commentInput, setCommentInput] = useState('');
+  const [commentImage, setCommentImage] = useState<string | null>(null);
+  const [replyToId, setReplyToId] = useState<string | undefined>(undefined);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const sortedComments = [...comments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const displayedComments = showAllComments ? sortedComments : sortedComments.slice(0, 3);
   const [localProgress, setLocalProgress] = useState(goal.progress);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLocalProgress(goal.progress);
@@ -2895,11 +3265,28 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
 
   const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
   const confirmations = goal.confirmations || {};
-  const confirmedCount = ROLES.filter(r => confirmations[r]).length;
+  
+  // Requirement: Assignee is the Confirmer
+  const requiredConfirmers = assignees.length > 0 ? assignees : ['爸爸'];
+  const confirmedCount = requiredConfirmers.filter(r => confirmations[r]).length;
+  const totalRequired = requiredConfirmers.length;
 
   const isAdmin = currentUser === '管理员';
   const canEdit = isAdmin || goal.creator === currentUser;
   const canAddProgress = isAdmin || assignees.includes(currentUser) || goal.creator === currentUser;
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCommentImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const commonEmojis = ['👍', '👏', '🔥', '❤️', '🎯', '✅', '💪', '🎉', '✨', '🚀'];
 
   return (
     <motion.div 
@@ -2908,7 +3295,7 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col transition-all ${
-        isCompleted ? 'border-emerald-200' : isPendingConfirmation ? 'border-blue-200' : isOverdue ? 'border-red-200' : 'border-stone-200'
+        isCompleted ? 'border-emerald-200 bg-stone-50/50 grayscale-[0.2]' : isPendingConfirmation ? 'border-blue-200' : isOverdue ? 'border-red-200' : 'border-stone-200'
       }`}
     >
       <div 
@@ -2987,10 +3374,10 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                   <div className="bg-blue-50 p-3 rounded-xl space-y-2">
                     <div className="flex items-center gap-2 text-xs font-medium text-blue-700">
                       <Clock className="w-3 h-3" />
-                      <span>等待确认 ({confirmedCount}/4)</span>
+                      <span>等待责任人确认 ({confirmedCount}/{totalRequired})</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      {ROLES.map(r => (
+                      {requiredConfirmers.map(r => (
                         <div key={r} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${confirmations[r] ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-white border-blue-100 text-stone-400'}`}>
                           {confirmations[r] ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
                           {r}
@@ -3032,7 +3419,7 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                     )}
                     {goal.progress >= 99 && !isCompleted && (
                       <div className="flex flex-wrap gap-2">
-                        {ROLES.map(r => {
+                        {requiredConfirmers.map(r => {
                           if (confirmations[r]) return null;
                           const canConfirm = isAdmin || r === currentUser;
                           return (
@@ -3040,13 +3427,13 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                               key={r}
                               onClick={(e) => { e.stopPropagation(); canConfirm && onConfirm(r); }}
                               disabled={!canConfirm}
-                              className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-1 ${
+                              className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors shadow-sm flex items-center justify-center gap-1 min-h-[48px] ${
                                 canConfirm 
                                   ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
                                   : 'bg-stone-200 text-stone-400 cursor-not-allowed'
                               }`}
                             >
-                              <CheckCircle2 className="w-4 h-4" /> {r} 确认
+                              <CheckCircle2 className="w-4 h-4" /> {r} 确认完成
                             </button>
                           );
                         })}
@@ -3079,29 +3466,154 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                           <UserAvatar role={c.user} profiles={profiles} className="w-5 h-5 shrink-0" />
                           <div className="flex-grow">
                             <div className="flex justify-between items-center mb-0.5">
-                              <span className="text-[10px] font-bold text-stone-600">{c.user}</span>
-                              <span className="text-[8px] text-stone-400">{new Date(c.date).toLocaleString()}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-stone-600">{c.user}</span>
+                                {c.replyTo && (
+                                  <span className="text-[8px] text-stone-400 bg-stone-100 px-1 rounded">回复了</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[8px] text-stone-400">{new Date(c.date).toLocaleString()}</span>
+                                <button 
+                                  onClick={() => {
+                                    setCommentInput(`@${c.user} `);
+                                    setReplyToId(c.id);
+                                  }}
+                                  className="text-[8px] font-bold text-orange-500 hover:text-orange-600"
+                                >
+                                  回复
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-xs text-stone-700 bg-stone-50 p-2 rounded-lg">{c.content}</p>
+                            {c.replyTo && (
+                              <div className="mb-1 pl-2 border-l-2 border-stone-200">
+                                {(() => {
+                                  const repliedComment = comments.find(rc => rc.id === c.replyTo);
+                                  return repliedComment ? (
+                                    <p className="text-[9px] text-stone-400 italic truncate">
+                                      "{repliedComment.content}"
+                                    </p>
+                                  ) : (
+                                    <p className="text-[9px] text-stone-300 italic">原留言已删除</p>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                            <p className="text-xs text-stone-700 bg-stone-50 p-2 rounded-lg">
+                              {c.content}
+                              {c.image && (
+                                <img 
+                                  src={c.image} 
+                                  alt="Comment attachment" 
+                                  className="mt-2 rounded-lg max-w-full h-auto border border-stone-100 shadow-sm"
+                                  referrerPolicy="no-referrer"
+                                />
+                              )}
+                            </p>
                           </div>
                         </div>
                       ))
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <input 
-                      value={commentInput}
-                      onChange={e => setCommentInput(e.target.value)}
-                      placeholder="发表意见..."
-                      className="flex-grow px-3 py-1.5 bg-stone-100 rounded-lg text-xs outline-none focus:ring-1 focus:ring-orange-500"
-                    />
-                    <button 
-                      onClick={() => { if(commentInput.trim()) { onAddComment(commentInput); setCommentInput(''); } }}
-                      disabled={!commentInput.trim()}
-                      className="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold disabled:opacity-50 cursor-pointer"
-                    >
-                      发送
-                    </button>
+                  <div className="space-y-2">
+                    {commentImage && (
+                      <div className="relative inline-block">
+                        <img src={commentImage} alt="Preview" className="w-16 h-16 object-cover rounded-lg border border-stone-200" referrerPolicy="no-referrer" />
+                        <button 
+                          onClick={() => setCommentImage(null)}
+                          className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] shadow-sm"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                    
+                    <AnimatePresence>
+                      {showEmojiPicker && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="flex flex-wrap gap-2 p-2 bg-stone-50 rounded-xl border border-stone-100"
+                        >
+                          {commonEmojis.map(emoji => (
+                            <button 
+                              key={emoji}
+                              onClick={() => {
+                                setCommentInput(prev => prev + emoji);
+                                setShowEmojiPicker(false);
+                              }}
+                              className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {replyToId && (
+                      <div className="flex items-center justify-between bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-orange-600 font-bold">回复:</span>
+                          <span className="text-[10px] text-stone-500 truncate max-w-[200px]">
+                            {comments.find(c => c.id === replyToId)?.content || '加载中...'}
+                          </span>
+                        </div>
+                        <button 
+                          onClick={() => setReplyToId(undefined)}
+                          className="text-stone-400 hover:text-red-500"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-2">
+                      <div className="relative flex-grow">
+                        <input 
+                          value={commentInput}
+                          onChange={e => setCommentInput(e.target.value)}
+                          placeholder="写下你的评论或建议..."
+                          className="w-full pl-3 pr-20 py-2 bg-stone-50 border border-stone-100 rounded-xl text-xs focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                        />
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1">
+                          <button 
+                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                            className="p-1.5 text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                          >
+                            <Smile className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="p-1.5 text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                          >
+                            <ImageIcon className="w-4 h-4" />
+                          </button>
+                          <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            onChange={handleImageUpload} 
+                            accept="image/*" 
+                            className="hidden" 
+                          />
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          if (commentInput.trim() || commentImage) {
+                            onAddComment(commentInput, commentImage || undefined, replyToId);
+                            setCommentInput('');
+                            setCommentImage(null);
+                            setReplyToId(undefined);
+                          }
+                        }}
+                        disabled={!currentUser}
+                        className="px-4 py-2 bg-stone-800 text-white rounded-xl text-xs font-bold hover:bg-stone-900 transition-colors disabled:opacity-50 cursor-pointer"
+                      >
+                        发送
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -3367,7 +3879,7 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">责任人 (可多选，团队目标有额外加分)</label>
+              <label className="block text-sm font-medium text-stone-700 mb-2">责任人 (即确认人，可多选)</label>
               <div className="flex flex-wrap gap-3">
                 {ROLES.map(r => (
                   <label key={r} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${
@@ -3383,6 +3895,7 @@ function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, 
                   </label>
                 ))}
               </div>
+              <p className="mt-2 text-[10px] text-stone-400 italic">注：责任人负责执行任务，并在完成后负责最终确认。团队目标有额外加分。</p>
             </div>
 
             <div>

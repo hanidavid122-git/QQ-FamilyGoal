@@ -78,6 +78,8 @@ export type GoalComment = {
   user: string;
   content: string;
   date: string;
+  image?: string;
+  replyTo?: string; // ID of the comment being replied to
 };
 
 export type Message = {

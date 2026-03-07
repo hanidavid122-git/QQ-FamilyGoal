@@ -14,9 +14,16 @@ interface RecentActivityProps {
 }
 
 export function RecentActivity({ activities, profiles, isExpanded, onToggle, tableMissing, isAdmin }: RecentActivityProps) {
+  const [showAll, setShowAll] = React.useState(false);
   const hasActivities = activities.length > 0;
   const latest = hasActivities ? activities[0] : null;
-  const displayActivities = isExpanded ? activities : [latest];
+  
+  // Logic: 
+  // If collapsed: show 1
+  // If expanded: show 10, then show "View All" button
+  const displayActivities = isExpanded 
+    ? (showAll ? activities : activities.slice(0, 10))
+    : (latest ? [latest] : []);
 
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -83,7 +90,7 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
               
               {hasActivities ? (
                 <>
-                  {activities.map((activity, idx) => (
+                  {displayActivities.map((activity, idx) => (
                     <motion.div 
                       key={activity.id}
                       initial={{ x: -10, opacity: 0 }}
@@ -104,6 +111,25 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
                       </div>
                     </motion.div>
                   ))}
+                  
+                  {activities.length > 10 && !showAll && isExpanded && (
+                    <button 
+                      onClick={() => setShowAll(true)}
+                      className="w-full py-2 text-[10px] font-bold text-stone-400 hover:text-stone-600 transition-colors border-t border-stone-50 border-dashed mt-2"
+                    >
+                      查看更多动态 ({activities.length - 10}+)
+                    </button>
+                  )}
+
+                  {showAll && isExpanded && (
+                    <button 
+                      onClick={() => setShowAll(false)}
+                      className="w-full py-2 text-[10px] font-bold text-stone-400 hover:text-stone-600 transition-colors border-t border-stone-50 border-dashed mt-2"
+                    >
+                      收起部分动态
+                    </button>
+                  )}
+
                   {activities.length >= 50 && (
                     <p className="text-center text-[10px] text-stone-400 pt-2">仅显示最近 50 条动态</p>
                   )}
