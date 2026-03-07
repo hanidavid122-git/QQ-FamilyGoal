@@ -250,11 +250,21 @@ function PointsDynamics({
   isExpanded: boolean, 
   onToggle: () => void 
 }) {
+  const [timeRange, setTimeRange] = useState<'week' | 'all'>('week');
+
   const data = useMemo(() => {
     const roles = ROLES.filter(r => r !== '管理员');
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     
     return roles.map(role => {
-      const roleTxs = transactions.filter(t => t.member === role && (t.type === 'earned' || t.type === 'earn'));
+      const roleTxs = transactions.filter(t => {
+        const isRole = t.member === role;
+        const isEarned = t.type === 'earned' || t.type === 'earn';
+        const isInRange = timeRange === 'all' || t.date >= oneWeekAgo;
+        return isRole && isEarned && isInRange;
+      });
+
       const total = roleTxs.reduce((sum, t) => sum + t.amount, 0);
       
       const task = roleTxs.filter(t => t.reason.includes('目标') || t.reason.includes('完成')).reduce((sum, t) => sum + t.amount, 0);
@@ -278,8 +288,9 @@ function PointsDynamics({
         otherPct: total > 0 ? (other / total) * 100 : 0
       };
     }).sort((a, b) => b.total - a.total);
-  }, [transactions]);
+  }, [transactions, timeRange]);
 
+  const maxTotal = useMemo(() => Math.max(...data.map(d => d.total), 1), [data]);
   const leader = data[0];
 
   return (
@@ -297,7 +308,7 @@ function PointsDynamics({
             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-500">
               <UserAvatar role={leader.role} profiles={profiles} className="w-5 h-5 text-[10px]" />
               <span className="text-xs text-stone-600 font-bold">
-                {leader.role} 领先 <span className="text-orange-500">+{leader.total}</span>
+                {leader.role} {timeRange === 'week' ? '本周' : '累计'}领先 <span className="text-orange-500">+{leader.total}</span>
               </span>
             </div>
           )}
@@ -314,27 +325,43 @@ function PointsDynamics({
             className="overflow-hidden"
           >
             <div className="px-6 pb-6 space-y-6 pt-2">
-              {/* Legend */}
-              <div className="flex flex-wrap gap-x-4 gap-y-2 justify-end">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-stone-900" />
-                  <span className="text-[10px] font-bold text-stone-500">任务</span>
+              <div className="flex items-center justify-between">
+                <div className="flex bg-stone-100 p-1 rounded-xl">
+                  <button 
+                    onClick={() => setTimeRange('week')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'week' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                  >
+                    最近一周
+                  </button>
+                  <button 
+                    onClick={() => setTimeRange('all')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'all' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                  >
+                    全部
+                  </button>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
-                  <span className="text-[10px] font-bold text-stone-500">登录</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-blue-400" />
-                  <span className="text-[10px] font-bold text-stone-500">弹幕</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-orange-400" />
-                  <span className="text-[10px] font-bold text-stone-500">留言</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-sm bg-stone-200" />
-                  <span className="text-[10px] font-bold text-stone-500">其他</span>
+                {/* Legend */}
+                <div className="flex flex-wrap gap-x-4 gap-y-2 justify-end">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm bg-stone-900" />
+                    <span className="text-[10px] font-bold text-stone-500">任务</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
+                    <span className="text-[10px] font-bold text-stone-500">登录</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm bg-blue-400" />
+                    <span className="text-[10px] font-bold text-stone-500">弹幕</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm bg-orange-400" />
+                    <span className="text-[10px] font-bold text-stone-500">留言</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm bg-stone-200" />
+                    <span className="text-[10px] font-bold text-stone-500">其他</span>
+                  </div>
                 </div>
               </div>
 
@@ -348,7 +375,7 @@ function PointsDynamics({
                         <span className="text-xs font-bold text-stone-700">{item.role}</span>
                         <span className="text-xs font-black text-orange-500">+{item.total} pts</span>
                       </div>
-                      <div className="h-3 bg-stone-100 rounded-full overflow-hidden flex">
+                      <div className="h-3 bg-stone-100 rounded-full overflow-hidden flex" style={{ width: `${(item.total / maxTotal) * 100}%`, minWidth: '4px' }}>
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${item.taskPct}%` }}
@@ -427,6 +454,104 @@ function FamilyHero({ familyPts, nextMilestone, nextRewardName, transactions }: 
 }
 
 
+
+const DANMAKU_EFFECT_LABELS: Record<string, string> = {
+  default: '无',
+  blink: '闪烁',
+  ghost: '幽灵',
+  zoom: '缩放',
+  pulse: '脉冲',
+  bounce: '弹跳',
+  rotate: '旋转',
+  shake: '抖动',
+  flip: '翻转',
+  wave: '波浪',
+  float: '漂浮',
+  skew: '倾斜',
+  blur: '模糊',
+  neon: '霓虹',
+  fire: '火焰',
+  ice: '寒冰',
+  rainbow: '彩虹',
+  glitch: '故障'
+};
+
+function DanmakuItem({ msg, profiles, isLeader, isAdmin, onDeleteMessage, i, laneIndex, top }: { msg: Message, profiles: Profile[], isLeader: boolean, isAdmin: boolean, onDeleteMessage?: (id: string | string[]) => void, i: number, laneIndex: number, top: number }) {
+  const [loopCount, setLoopCount] = useState(0);
+  const effects = useMemo(() => (msg.effect || 'default').split(','), [msg.effect]);
+  const randomEffect = useMemo(() => effects[Math.floor(Math.random() * effects.length)] || 'default', [msg.id, loopCount, effects]);
+
+  const offset = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3, [msg.id]);
+  const baseSpeed = msg.speed || 10;
+  const speedVariation = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2, [msg.id]);
+  const finalSpeed = Math.max(5, baseSpeed + speedVariation);
+  
+  const createdDate = new Date(msg.date).getTime();
+  const duration = msg.duration || (24 * 60 * 60 * 1000);
+  const remainingMs = Math.max(0, createdDate + duration - Date.now());
+  const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+  const oneHourMs = 60 * 60 * 1000;
+  let timeOpacity = 1;
+  if (duration !== -1 && remainingMs <= oneHourMs) {
+    timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
+  }
+
+  return (
+    <motion.div
+      key={`${msg.id}-${loopCount}`}
+      initial={{ left: '100%', x: 0, opacity: 0 }}
+      animate={{ 
+        x: '-150vw', 
+        opacity: (randomEffect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (randomEffect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
+        scale: randomEffect === 'zoom' ? [1, 1.2, 1] : (randomEffect === 'pulse' ? [1, 1.1, 1] : (randomEffect === 'bounce' ? [1, 1.1, 1] : 1)),
+        rotate: randomEffect === 'rotate' ? [0, 360] : (randomEffect === 'shake' ? [0, 2, -2, 0] : (randomEffect === 'flip' ? [0, 180, 360] : 0)),
+        y: randomEffect === 'wave' ? [0, -10, 10, 0] : (randomEffect === 'float' ? [0, -5, 0] : 0),
+        skewX: randomEffect === 'skew' ? [0, 10, -10, 0] : 0,
+        filter: randomEffect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (randomEffect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (randomEffect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (randomEffect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
+        color: randomEffect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
+      }}
+      transition={{ 
+        x: { duration: finalSpeed, ease: "linear", delay: loopCount === 0 ? i * 0.8 : 0 },
+        opacity: { duration: (randomEffect === 'blink' || randomEffect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
+        scale: { duration: 1, repeat: Infinity },
+        rotate: { duration: randomEffect === 'rotate' ? 2 : 0.5, repeat: Infinity },
+        y: { duration: 2, repeat: Infinity },
+        skewX: { duration: 1, repeat: Infinity },
+        filter: { duration: 1.5, repeat: Infinity },
+        color: { duration: 3, repeat: Infinity }
+      }}
+      onAnimationComplete={() => setLoopCount(prev => prev + 1)}
+      className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${randomEffect === 'glitch' ? 'animate-pulse' : ''}`}
+      style={{ 
+        top: `${top + offset}%`,
+        fontSize: msg.font_size || '0.9rem',
+      }}
+    >
+      <div className="relative">
+        <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
+        {isLeader && (
+          <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
+        )}
+      </div>
+      <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
+      <span style={{ color: msg.color }}>{msg.content}</span>
+      <div className="flex items-center gap-1 ml-1">
+        {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
+        <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
+          {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
+        </span>
+        {isAdmin && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
+            className="text-stone-300 hover:text-red-500 transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </motion.div>
+  );
+}
 
 function DanmakuBoard({ 
   messages, 
@@ -706,74 +831,20 @@ function DanmakuBoard({
                     }).slice(-20).map((msg, i) => {
                       const laneIndex = i % LANES_COUNT;
                       const top = getLaneTop(laneIndex);
-                      const offset = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3;
-                      const baseSpeed = msg.speed || 10;
-                      const speedVariation = (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2;
-                      const finalSpeed = Math.max(5, baseSpeed + speedVariation);
-                      const createdDate = new Date(msg.date).getTime();
-                      const duration = msg.duration || (24 * 60 * 60 * 1000);
-                      const remainingMs = Math.max(0, createdDate + duration - Date.now());
-                      const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
                       const isLeader = sortedStats[0] && sortedStats[0].role === msg.user && sortedStats[0].pts > 0;
-                      const oneHourMs = 60 * 60 * 1000;
-                      let timeOpacity = 1;
-                      if (duration !== -1 && remainingMs <= oneHourMs) {
-                        timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
-                      }
 
                       return (
-                        <motion.div
+                        <DanmakuItem 
                           key={msg.id}
-                          initial={{ left: '100%', x: 0, opacity: 0 }}
-                          animate={{ 
-                            x: '-150vw', 
-                            opacity: (msg.effect?.includes('blink') ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (msg.effect?.includes('ghost') ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
-                            scale: msg.effect?.includes('zoom') ? [1, 1.2, 1] : (msg.effect?.includes('pulse') ? [1, 1.1, 1] : (msg.effect?.includes('bounce') ? [1, 1.1, 1] : 1)),
-                            rotate: msg.effect?.includes('rotate') ? [0, 360] : (msg.effect?.includes('shake') ? [0, 2, -2, 0] : (msg.effect?.includes('flip') ? [0, 180, 360] : 0)),
-                            y: msg.effect?.includes('wave') ? [0, -10, 10, 0] : (msg.effect?.includes('float') ? [0, -5, 0] : 0),
-                            skewX: msg.effect?.includes('skew') ? [0, 10, -10, 0] : 0,
-                            filter: msg.effect?.includes('blur') ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (msg.effect?.includes('neon') ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (msg.effect?.includes('fire') ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (msg.effect?.includes('ice') ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
-                            color: msg.effect?.includes('rainbow') ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
-                          }}
-                          transition={{ 
-                            x: { duration: finalSpeed, ease: "linear", repeat: Infinity, delay: i * 0.8 },
-                            opacity: { duration: (msg.effect?.includes('blink') || msg.effect?.includes('ghost')) ? 0.8 : 0.5, repeat: Infinity },
-                            scale: { duration: 1, repeat: Infinity },
-                            rotate: { duration: msg.effect?.includes('rotate') ? 2 : 0.5, repeat: Infinity },
-                            y: { duration: 2, repeat: Infinity },
-                            skewX: { duration: 1, repeat: Infinity },
-                            filter: { duration: 1.5, repeat: Infinity },
-                            color: { duration: 3, repeat: Infinity }
-                          }}
-                          className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${msg.effect?.includes('glitch') ? 'animate-pulse' : ''}`}
-                          style={{ 
-                            top: `${top + offset}%`,
-                            fontSize: msg.font_size || '0.9rem',
-                          }}
-                        >
-                          <div className="relative">
-                            <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
-                            {isLeader && (
-                              <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
-                            )}
-                          </div>
-                          <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
-                          <span style={{ color: msg.color }}>{msg.content}</span>
-                          <div className="flex items-center gap-1 ml-1">
-                            {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
-                            <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
-                              {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
-                            </span>
-                            {isAdmin && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
-                                className="text-stone-300 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        </motion.div>
+                          msg={msg}
+                          profiles={profiles}
+                          isLeader={isLeader}
+                          isAdmin={isAdmin}
+                          onDeleteMessage={onDeleteMessage}
+                          i={i}
+                          laneIndex={laneIndex}
+                          top={top}
+                        />
                       );
                     })}
                   </AnimatePresence>
@@ -896,7 +967,7 @@ function DanmakuBoard({
                                 }}
                                 className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedEffect.includes(eff) ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-500 border-stone-200'}`}
                               >
-                                {eff === 'default' ? '无' : eff}
+                                {DANMAKU_EFFECT_LABELS[eff] || eff}
                               </button>
                             ))}
                           </div>
@@ -913,7 +984,6 @@ function DanmakuBoard({
     </div>
   );
 }
-
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -1258,6 +1328,25 @@ export default function App() {
 
     init();
   }, []);
+
+  // Auto-complete goals if all required confirmers have confirmed (handles existing data)
+  useEffect(() => {
+    if (!loading && goals.length > 0) {
+      const pendingAutoCompletes = goals.filter(goal => {
+        if (goal.progress >= 100 && goal.completedAt) return false;
+        const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
+        const requiredConfirmers = assignees.length > 0 ? assignees : ['爸爸'];
+        const confirmations = goal.confirmations || {};
+        return requiredConfirmers.every(r => confirmations[r]);
+      });
+
+      if (pendingAutoCompletes.length > 0) {
+        pendingAutoCompletes.forEach(goal => {
+          handleConfirmCompletion(goal.id, Object.keys(goal.confirmations || {})[0] || '系统');
+        });
+      }
+    }
+  }, [goals, loading]);
 
 
 
@@ -1628,9 +1717,7 @@ export default function App() {
         goal_id: goalId,
         user: currentUser,
         content,
-        date: newCommentDate,
-        image,
-        reply_to: replyTo
+        date: newCommentDate
       });
       if (error) throw error;
       
@@ -1640,7 +1727,10 @@ export default function App() {
         .filter(t => t.member === currentUser && t.reason === '任务留言奖励' && t.date.startsWith(today))
         .reduce((sum, t) => sum + t.amount, 0);
       
-      if (dailyPoints < 10) {
+      const earnedPoints = dailyPoints < 10;
+      addActivity('danmaku', `在任务讨论中留言: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}${earnedPoints ? ' (+1 积分)' : ''}`);
+
+      if (earnedPoints) {
         await supabase.from('transactions').insert({
           id: generateId(),
           member: currentUser,
@@ -1686,26 +1776,29 @@ export default function App() {
         updates.completed_at = new Date().toISOString();
         updates.progress = 100;
         
-        addActivity('goal_completed', `完成了目标: ${goal.name}`, { goalId: id });
-        
         const isEarly = new Date() < new Date(goal.endDate);
         const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
         const isTeam = assignees.length > 1;
         
+        // Calculate points based on new rules
+        const basePoints = 10;
+        const earlyPoints = isEarly ? 3 : 0;
+        const teamBonus = isTeam ? 5 : 0;
+        const totalPointsForTask = basePoints + earlyPoints + teamBonus;
+        const pointsPerPerson = isTeam ? Math.ceil(totalPointsForTask / assignees.length) : totalPointsForTask;
+
+        addActivity('goal_completed', `完成了目标: ${goal.name} (每人获得 ${pointsPerPerson} 积分)`, { goalId: id });
+        
         const newTxs: any[] = [];
         assignees.forEach(m => {
-          const award = (amount: number, reason: string) => {
-            newTxs.push({ id: generateId(), member: m, amount, reason, type: 'earned', date: new Date().toISOString() });
-          };
-
-          award(10, `完成目标: ${goal.name}`);
-          if (isEarly) award(3, `提前完成`);
-          if (isTeam) award(5, `团队协作`);
-          
-          const mCompleted = goals.filter(g => (g.assignees?.includes(m) || g.assignee === m) && g.completedAt);
-          if (mCompleted.length % 3 === 2) {
-            award(8, `连续完成3个目标`);
-          }
+          newTxs.push({ 
+            id: generateId(), 
+            member: m, 
+            amount: pointsPerPerson, 
+            reason: `完成目标: ${goal.name}${isEarly ? ' (含提前奖励)' : ''}${isTeam ? ' (团队分配)' : ''}`, 
+            type: 'earned', 
+            date: new Date().toISOString() 
+          });
         });
         
         if (newTxs.length > 0) {
@@ -2073,11 +2166,12 @@ export default function App() {
         const { error } = await supabase.from('messages').insert(newMsg);
         if (error) throw error;
 
-        addActivity('danmaku', `发布了弹幕: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}`);
-
         // Award 1 point for sending a message, respecting daily limit
         const currentDaily = getDailyMessagePoints(currentUser);
-        if (currentDaily < 10) {
+        const earnedPoints = currentDaily < 10;
+        addActivity('danmaku', `发布了弹幕: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}${earnedPoints ? ' (+1 积分)' : ''}`);
+
+        if (earnedPoints) {
             await supabase.from('transactions').insert({
                 id: generateId(),
                 member: currentUser,
@@ -2265,7 +2359,6 @@ export default function App() {
       if (profile.pin?.trim() === pin.trim()) {
         console.log('Login successful');
         setCurrentUser(role);
-        addActivity('login', '进入了系统', null, role);
 
         // Daily Login Bonus
         try {
@@ -2276,7 +2369,10 @@ export default function App() {
               .eq('member', role)
               .eq('date', today);
               
-            if (!checkins || checkins.length === 0) {
+            const isFirstLogin = !checkins || checkins.length === 0;
+            addActivity('login', `进入了系统${isFirstLogin ? ' (+1 积分)' : ''}`, null, role);
+
+            if (isFirstLogin) {
               // First login today
               const checkinId = generateId();
               await supabase.from('checkins').insert({ id: checkinId, member: role, date: today });
@@ -2423,7 +2519,7 @@ export default function App() {
             <Heart className="w-6 h-6 fill-current" />
             <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
               多盈家庭目标
-              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.2 弹幕版</span>
+              <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal">v2.3 好看版</span>
               {loading && (
                 <div className="w-3 h-3 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin ml-1" />
               )}
@@ -2856,15 +2952,11 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">团队协作</div>
-                  <div className="font-bold text-stone-700">多人完成 <span className="text-purple-500">+5/人</span></div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-stone-400">连胜奖励</div>
-                  <div className="font-bold text-stone-700">三连胜 <span className="text-orange-500">+8</span></div>
+                  <div className="font-bold text-stone-700">多人任务 <span className="text-purple-500">总分/人数 (向上取整)</span></div>
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">积分上限</div>
-                  <div className="font-bold text-red-500">留言/意见积分上限 <span className="text-red-600">10 分/天</span></div>
+                  <div className="font-bold text-red-500">留言/弹幕积分上限 <span className="text-red-600">10 分/天</span></div>
                 </div>
               </div>
             </div>
@@ -3381,7 +3473,7 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                 {goal.priority}
               </span>
               <span className="text-xs text-stone-400">
-                {isCompleted ? '已完成' : `剩余 ${diffDays} 天`}
+                {isCompleted ? '已完成' : diffDays < 0 ? `延迟 ${Math.abs(diffDays)} 天` : `剩余 ${diffDays} 天`}
               </span>
             </div>
           </div>
@@ -4152,18 +4244,19 @@ function UserSettingsModal({ role, currentAvatar, onClose, onUpdateAvatar }: { r
  * *   **数据可视化**: 家庭总积分趋势、成员积分动态（来源细分）。
  * *   **奖励兑换**: 个人及全家里程碑奖励。
  * 
- * #### 3. 最近更新 (v2.1.0)
+ * #### 3. 最近更新 (v2.3.0)
  * *   **UI 优化**:
- *     *   “积分动态”改为堆叠条形图，清晰展示积分来源（任务、登录、弹幕、留言、其他）。
- *     *   “家庭总积分”趋势图回归单曲线模式，突出任务贡献占比。
- *     *   所有折叠面板（留言板、活动、动态）保持一致的 UI 风格。
+ *     *   “积分动态”支持“最近一周”和“全部”切换，且条形图总长度与积分量成正比。
+ *     *   “最近动态”面板增加滚动条，限制最大高度，且超过 5 条即显示滚动条。
+ *     *   任务剩余时间显示优化：负数显示为“延迟 X 天”。
+ *     *   网页版本更新为 “v2.3 好看版”。
+ * *   **逻辑增强**:
+ *     *   自动完成：当所有责任人都确认后，任务自动刷新为“已完成”状态（包含存量数据自动检查）。
+ *     *   弹幕特效：多选特效时，每条弹幕随机从选中的效果中挑选一种展示。
  * *   **弹幕增强**:
- *     *   支持弹幕特效多选。
- *     *   自动聚合 24 小时内的重复弹幕，减少冗余。
- *     *   优化排行榜显示，确保领先者头像不被遮挡。
+ *     *   弹幕特效选择器全面中文化，提升使用体验。
  * *   **Bug 修复**:
- *     *   修复了任务讨论区回复功能中的 `replyToId` 引用错误。
- *     *   完善了任务留言的图片上传和表情选择功能。
+ *     *   修复了任务讨论区回复留言可能失败的问题（优化了数据库插入逻辑）。
  * 
  * #### 4. 技术栈
  * *   Frontend: React, Tailwind CSS, Framer Motion, Recharts.

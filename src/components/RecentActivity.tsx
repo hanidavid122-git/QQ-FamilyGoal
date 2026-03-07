@@ -20,9 +20,9 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
   
   // Logic: 
   // If collapsed: show 1
-  // If expanded: show 10, then show "View All" button
+  // If expanded: show 5, then show "View All" button
   const displayActivities = isExpanded 
-    ? (showAll ? activities : activities.slice(0, 10))
+    ? (showAll ? activities : activities.slice(0, 5))
     : (latest ? [latest] : []);
 
   const formatTime = (dateStr: string) => {
@@ -81,7 +81,7 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <div className="px-6 pb-6 space-y-4 pt-2">
+            <div className="px-6 pb-6 space-y-4 pt-2 h-[320px] overflow-y-auto no-scrollbar">
               {isAdmin && tableMissing && (
                 <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-600 mb-2">
                   ⚠️ 数据库表 activities 不存在，动态无法永久保存。请运行 update_schema.sql。
@@ -112,12 +112,12 @@ export function RecentActivity({ activities, profiles, isExpanded, onToggle, tab
                     </motion.div>
                   ))}
                   
-                  {activities.length > 10 && !showAll && isExpanded && (
+                  {activities.length > 5 && !showAll && isExpanded && (
                     <button 
                       onClick={() => setShowAll(true)}
                       className="w-full py-2 text-[10px] font-bold text-stone-400 hover:text-stone-600 transition-colors border-t border-stone-50 border-dashed mt-2"
                     >
-                      查看更多动态 ({activities.length - 10}+)
+                      查看更多动态 ({activities.length - 5}+)
                     </button>
                   )}
 
