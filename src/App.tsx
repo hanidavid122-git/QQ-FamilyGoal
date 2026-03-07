@@ -1329,6 +1329,80 @@ export default function App() {
     init();
   }, []);
 
+  // Data Repair Effect
+  useEffect(() => {
+    const runRepair = async () => {
+      if (!isSupabaseConfigured) return;
+      
+      const lastRepair = localStorage.getItem('last_data_repair_v3');
+      const now = new Date().getTime();
+      
+      // Run repair if not run in the last 5 minutes
+      if (!lastRepair || now - parseInt(lastRepair) > 300000) {
+        console.log('Starting data repair...');
+        
+        // 1. Repair Transactions
+        const { data: allTxs } = await supabase.from('transactions').select('*');
+        if (allTxs) {
+          const seen = new Set();
+          const toDelete = [];
+          const sortedTxs = [...allTxs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          
+          for (const tx of sortedTxs) {
+            if (tx.reason.startsWith('完成目标:')) {
+              const dateStr = new Date(tx.date).toISOString().split('T')[0];
+              const key = `${tx.member}-${tx.reason}-${dateStr}`;
+              if (seen.has(key)) {
+                toDelete.push(tx.id);
+              } else {
+                seen.add(key);
+              }
+            }
+          }
+          
+          if (toDelete.length > 0) {
+            console.log(`Deleting ${toDelete.length} duplicate transactions...`);
+            for (let i = 0; i < toDelete.length; i += 100) {
+              await supabase.from('transactions').delete().in('id', toDelete.slice(i, i + 100));
+            }
+          }
+        }
+
+        // 2. Repair Activities
+        const { data: allActs } = await supabase.from('activities').select('*');
+        if (allActs) {
+          const seenActs = new Set();
+          const actsToDelete = [];
+          const sortedActs = [...allActs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          
+          for (const act of sortedActs) {
+            if (act.type === 'goal_completed') {
+              const dateStr = new Date(act.date).toISOString().split('T')[0];
+              const key = `${act.content}-${dateStr}`;
+              if (seenActs.has(key)) {
+                actsToDelete.push(act.id);
+              } else {
+                seenActs.add(key);
+              }
+            }
+          }
+          
+          if (actsToDelete.length > 0) {
+            console.log(`Deleting ${actsToDelete.length} duplicate activities...`);
+            for (let i = 0; i < actsToDelete.length; i += 100) {
+              await supabase.from('activities').delete().in('id', actsToDelete.slice(i, i + 100));
+            }
+          }
+        }
+        
+        localStorage.setItem('last_data_repair_v3', now.toString());
+        console.log('Data repair completed.');
+      }
+    };
+    
+    runRepair();
+  }, [isSupabaseConfigured]);
+
   // Auto-complete goals if all required confirmers have confirmed (handles existing data)
   useEffect(() => {
     if (!loading && goals.length > 0) {
@@ -1767,46 +1841,64 @@ export default function App() {
       if (!goal) return;
       
       const confirmations = { ...(goal.confirmations || {}), [member]: true };
-      const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
-      const requiredConfirmers = assignees.length > 0 ? assignees : ['爸爸'];
+      const goalAssignees = Array.from(new Set((goal.assignees || (goal.assignee ? [goal.assignee] : [])).filter(Boolean)));
+      const requiredConfirmers = goalAssignees.length > 0 ? goalAssignees : ['爸爸'];
       const allConfirmed = requiredConfirmers.every(r => confirmations[r]);
       const updates: any = { confirmations };
       
       if (allConfirmed && !goal.completedAt) {
-        updates.completed_at = new Date().toISOString();
-        updates.progress = 100;
-        
-        const isEarly = new Date() < new Date(goal.endDate);
-        const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
-        const isTeam = assignees.length > 1;
-        
-        // Calculate points based on new rules
-        const basePoints = 10;
-        const earlyPoints = isEarly ? 3 : 0;
-        const teamBonus = isTeam ? 5 : 0;
-        const totalPointsForTask = basePoints + earlyPoints + teamBonus;
-        const pointsPerPerson = isTeam ? Math.ceil(totalPointsForTask / assignees.length) : totalPointsForTask;
+        // ATOMIC UPDATE: Only award points if we successfully set completed_at from null
+        const { data: updateData, error: updateError } = await supabase
+          .from('goals')
+          .update({
+            ...updates,
+            completed_at: new Date().toISOString(),
+            progress: 100
+          })
+          .eq('id', id)
+          .is('completed_at', null)
+          .select();
 
-        addActivity('goal_completed', `完成了目标: ${goal.name} (每人获得 ${pointsPerPerson} 积分)`, { goalId: id });
-        
-        const newTxs: any[] = [];
-        assignees.forEach(m => {
-          newTxs.push({ 
-            id: generateId(), 
-            member: m, 
-            amount: pointsPerPerson, 
-            reason: `完成目标: ${goal.name}${isEarly ? ' (含提前奖励)' : ''}${isTeam ? ' (团队分配)' : ''}`, 
-            type: 'earned', 
-            date: new Date().toISOString() 
+        if (updateError) throw updateError;
+
+        // If updateData is empty, someone else already completed this goal
+        if (updateData && updateData.length > 0) {
+          const isEarly = new Date() < new Date(goal.endDate);
+          const isTeam = goalAssignees.length > 1;
+          
+          // Calculate points based on new rules
+          const basePoints = 10;
+          const earlyPoints = isEarly ? 3 : 0;
+          const teamBonus = isTeam ? 5 : 0;
+          const totalPointsForTask = basePoints + earlyPoints + teamBonus;
+          const pointsPerPerson = isTeam ? Math.ceil(totalPointsForTask / goalAssignees.length) : totalPointsForTask;
+
+          const membersStr = goalAssignees.join('、');
+          addActivity('goal_completed', `团队 [${membersStr}] 完成了目标: ${goal.name} (每人获得 ${pointsPerPerson} 积分)`, { goalId: id }, '系统');
+          
+          const newTxs: any[] = [];
+          goalAssignees.forEach(m => {
+            newTxs.push({ 
+              id: generateId(), 
+              member: m, 
+              amount: pointsPerPerson, 
+              reason: `完成目标: ${goal.name}${isEarly ? ' (含提前奖励)' : ''}${isTeam ? ' (团队分配)' : ''}`, 
+              type: 'earned', 
+              date: new Date().toISOString() 
+            });
           });
-        });
-        
-        if (newTxs.length > 0) {
-          await supabase.from('transactions').insert(newTxs);
+          
+          if (newTxs.length > 0) {
+            await supabase.from('transactions').insert(newTxs);
+          }
+        } else {
+          showToast('目标已被他人确认完成');
         }
+      } else {
+        // Just update confirmations
+        await supabase.from('goals').update(updates).eq('id', id);
       }
       
-      await supabase.from('goals').update(updates).eq('id', id);
       showToast('确认成功');
     } catch (e) {
       console.error(e);
@@ -1877,6 +1969,7 @@ export default function App() {
 
   const handleSaveGoal = async (goalData: Omit<Goal, 'id'>) => {
     const newId = generateId();
+    const uniqueAssignees = Array.from(new Set(goalData.assignees.filter(Boolean)));
     const dbGoal = {
       name: goalData.name,
       description: goalData.description,
@@ -1884,16 +1977,18 @@ export default function App() {
       end_date: goalData.endDate,
       progress: goalData.progress,
       creator: goalData.creator,
-      assignees: goalData.assignees,
-      assignee: goalData.assignee,
+      assignees: uniqueAssignees,
+      assignee: uniqueAssignees[0] || '爸爸',
       signature: goalData.signature,
       priority: goalData.priority,
       confirmations: goalData.confirmations || {},
-      type: goalData.type || (goalData.assignees.length > 1 ? 'family' : 'personal')
+      type: goalData.type || (uniqueAssignees.length > 1 ? 'family' : 'personal')
     };
 
     const optimisticGoal: Goal = {
       ...goalData,
+      assignees: uniqueAssignees,
+      assignee: uniqueAssignees[0] || '爸爸',
       id: editingGoal ? editingGoal.id : newId,
       confirmations: goalData.confirmations || {}
     };
