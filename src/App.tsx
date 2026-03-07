@@ -250,18 +250,22 @@ function PointsDynamics({
   isExpanded: boolean, 
   onToggle: () => void 
 }) {
-  const [timeRange, setTimeRange] = useState<'week' | 'all'>('week');
+  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'all'>('week');
 
   const data = useMemo(() => {
     const roles = ROLES.filter(r => r !== '管理员');
     const now = new Date();
+    const todayStr = getLocalDateString(now);
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     
     return roles.map(role => {
       const roleTxs = transactions.filter(t => {
         const isRole = t.member === role;
         const isEarned = t.type === 'earned' || t.type === 'earn';
-        const isInRange = timeRange === 'all' || t.date >= oneWeekAgo;
+        let isInRange = false;
+        if (timeRange === 'all') isInRange = true;
+        else if (timeRange === 'week') isInRange = t.date >= oneWeekAgo;
+        else if (timeRange === 'today') isInRange = t.date.startsWith(todayStr);
         return isRole && isEarned && isInRange;
       });
 
@@ -293,6 +297,12 @@ function PointsDynamics({
   const maxTotal = useMemo(() => Math.max(...data.map(d => d.total), 1), [data]);
   const leader = data[0];
 
+  const getRangeLabel = () => {
+    if (timeRange === 'today') return '今日';
+    if (timeRange === 'week') return '本周';
+    return '累计';
+  };
+
   return (
     <div className="bg-white/50 backdrop-blur-sm rounded-[2rem] border border-stone-100 overflow-hidden transition-all duration-300 shadow-sm">
       <div 
@@ -308,7 +318,7 @@ function PointsDynamics({
             <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-500">
               <UserAvatar role={leader.role} profiles={profiles} className="w-5 h-5 text-[10px]" />
               <span className="text-xs text-stone-600 font-bold">
-                {leader.role} {timeRange === 'week' ? '本周' : '累计'}领先 <span className="text-orange-500">+{leader.total}</span>
+                {leader.role} {getRangeLabel()}领先 <span className="text-orange-500">+{leader.total}</span>
               </span>
             </div>
           )}
@@ -327,6 +337,12 @@ function PointsDynamics({
             <div className="px-6 pb-6 space-y-6 pt-2">
               <div className="flex items-center justify-between">
                 <div className="flex bg-stone-100 p-1 rounded-xl">
+                  <button 
+                    onClick={() => setTimeRange('today')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'today' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
+                  >
+                    今日
+                  </button>
                   <button 
                     onClick={() => setTimeRange('week')}
                     className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'week' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
@@ -1334,12 +1350,12 @@ export default function App() {
     const runRepair = async () => {
       if (!isSupabaseConfigured) return;
       
-      const lastRepair = localStorage.getItem('last_data_repair_v3');
+      const lastRepair = localStorage.getItem('last_data_repair_v4');
       const now = new Date().getTime();
       
       // Run repair if not run in the last 5 minutes
       if (!lastRepair || now - parseInt(lastRepair) > 300000) {
-        console.log('Starting data repair...');
+        console.log('Starting data repair v4...');
         
         // 1. Repair Transactions
         const { data: allTxs } = await supabase.from('transactions').select('*');
@@ -1349,14 +1365,27 @@ export default function App() {
           const sortedTxs = [...allTxs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
           
           for (const tx of sortedTxs) {
+            let key = '';
             if (tx.reason.startsWith('完成目标:')) {
+              // Extract goal name to prevent duplicates even if reason suffix differs
+              const goalNameMatch = tx.reason.match(/完成目标: ([^(\n]+)/);
+              const goalName = goalNameMatch ? goalNameMatch[1].trim() : tx.reason;
+              key = `goal-${tx.member}-${goalName}`;
+            } else if (tx.reason.includes('登录奖励')) {
               const dateStr = new Date(tx.date).toISOString().split('T')[0];
-              const key = `${tx.member}-${tx.reason}-${dateStr}`;
-              if (seen.has(key)) {
-                toDelete.push(tx.id);
-              } else {
-                seen.add(key);
-              }
+              key = `login-${tx.member}-${dateStr}`;
+            } else if (tx.reason.includes('弹幕奖励') || tx.reason.includes('留言奖励')) {
+              // For danmaku/comments, we allow multiple but limit per day
+              // This repair is more complex, let's skip for now unless specifically requested
+              continue;
+            } else {
+              continue;
+            }
+
+            if (seen.has(key)) {
+              toDelete.push(tx.id);
+            } else {
+              seen.add(key);
             }
           }
           
@@ -1376,14 +1405,22 @@ export default function App() {
           const sortedActs = [...allActs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
           
           for (const act of sortedActs) {
+            let key = '';
             if (act.type === 'goal_completed') {
+              const goalNameMatch = act.content.match(/完成了目标: ([^(\n]+)/);
+              const goalName = goalNameMatch ? goalNameMatch[1].trim() : act.content;
+              key = `act-goal-${goalName}`; // One activity per goal completion
+            } else if (act.type === 'login') {
               const dateStr = new Date(act.date).toISOString().split('T')[0];
-              const key = `${act.content}-${dateStr}`;
-              if (seenActs.has(key)) {
-                actsToDelete.push(act.id);
-              } else {
-                seenActs.add(key);
-              }
+              key = `act-login-${act.user}-${dateStr}`;
+            } else {
+              continue;
+            }
+
+            if (seenActs.has(key)) {
+              actsToDelete.push(act.id);
+            } else {
+              seenActs.add(key);
             }
           }
           
@@ -1395,8 +1432,8 @@ export default function App() {
           }
         }
         
-        localStorage.setItem('last_data_repair_v3', now.toString());
-        console.log('Data repair completed.');
+        localStorage.setItem('last_data_repair_v4', now.toString());
+        console.log('Data repair v4 completed.');
       }
     };
     
