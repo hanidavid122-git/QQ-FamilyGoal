@@ -139,6 +139,69 @@ function LineChart({ data }: { data: number[] }) {
 
 const MESSAGES_KEY = 'family_goals_messages';
 
+function TaskWarningBar({ goals }: { goals: Goal[] }) {
+  const [isVisible, setIsVisible] = useState(true);
+  
+  const atRiskGoals = useMemo(() => {
+    return goals.filter(goal => {
+      if (goal.progress >= 100) return false;
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const start = new Date(goal.startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(goal.endDate);
+      end.setHours(0, 0, 0, 0);
+      
+      const totalDays = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const elapsedDays = Math.max(0, (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const timeElapsedPercent = Math.min(100, (elapsedDays / totalDays) * 100);
+      
+      return timeElapsedPercent >= 80;
+    });
+  }, [goals]);
+
+  if (!isVisible || atRiskGoals.length === 0) return null;
+
+  return (
+    <div className="bg-red-500 text-white py-2 px-4 relative overflow-hidden">
+      <div className="max-w-5xl mx-auto flex items-center justify-between relative z-10">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <AlertCircle className="w-4 h-4 shrink-0 animate-pulse" />
+          <div className="whitespace-nowrap animate-marquee flex gap-8">
+            {atRiskGoals.map(goal => (
+              <span key={goal.id} className="text-sm font-bold">
+                ⚠️ 任务提醒: [{goal.name}] 时间已消耗 80% 以上，请尽快完成！
+              </span>
+            ))}
+            {/* Duplicate for seamless loop */}
+            {atRiskGoals.map(goal => (
+              <span key={`${goal.id}-dup`} className="text-sm font-bold">
+                ⚠️ 任务提醒: [{goal.name}] 时间已消耗 80% 以上，请尽快完成！
+              </span>
+            ))}
+          </div>
+        </div>
+        <button 
+          onClick={() => setIsVisible(false)}
+          className="ml-4 p-1 hover:bg-white/20 rounded-full transition-colors cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <style>{`
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
   const data = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -731,6 +794,12 @@ function DanmakuBoard({
                           <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
                           <span style={{ color: msg.color }}>{msg.content}</span>
                           <div className="flex items-center gap-1 ml-1">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setReplyToId(msg.id); setInput(`@${msg.user} `); }}
+                              className="text-[9px] font-bold text-orange-500 hover:text-orange-600 transition-colors"
+                            >
+                              回复
+                            </button>
                             {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
                             <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
                               {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
@@ -756,35 +825,54 @@ function DanmakuBoard({
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <div className="relative flex-grow">
-                  <input 
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyPress={e => e.key === 'Enter' && input.trim() && (onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration), setInput(''))}
-                    placeholder={currentUser ? `作为 ${currentUser} 发送留言...` : "请先登录"}
-                    disabled={!currentUser}
-                    className="w-full pl-4 pr-12 py-3 bg-stone-50 border border-stone-100 rounded-2xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-inner"
-                  />
+              <div className="flex flex-col gap-2">
+                {replyToId && (
+                  <div className="flex items-center justify-between bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-100 mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-orange-600 font-bold">回复:</span>
+                      <span className="text-[10px] text-stone-500 truncate max-w-[200px]">
+                        {messages.find(m => m.id === replyToId)?.content || '加载中...'}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => setReplyToId(undefined)}
+                      className="text-stone-400 hover:text-red-500 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <div className="relative flex-grow">
+                    <input 
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyPress={e => e.key === 'Enter' && input.trim() && (onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration, replyToId), setInput(''), setReplyToId(undefined))}
+                      placeholder={currentUser ? `作为 ${currentUser} 发送留言...` : "请先登录"}
+                      disabled={!currentUser}
+                      className="w-full pl-4 pr-12 py-3 bg-stone-50 border border-stone-100 rounded-2xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-inner"
+                    />
+                    <button 
+                      onClick={() => setShowPicker(!showPicker)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
+                    >
+                      <Palette className="w-4 h-4" />
+                    </button>
+                  </div>
                   <button 
-                    onClick={() => setShowPicker(!showPicker)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
+                    onClick={() => {
+                      if (input.trim()) {
+                        onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration, replyToId);
+                        setInput('');
+                        setReplyToId(undefined);
+                      }
+                    }}
+                    disabled={!currentUser || !input.trim()}
+                    className="px-6 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all disabled:opacity-50 shadow-md active:scale-95"
                   >
-                    <Palette className="w-4 h-4" />
+                    发送
                   </button>
                 </div>
-                <button 
-                  onClick={() => {
-                    if (input.trim()) {
-                      onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect, selectedDuration);
-                      setInput('');
-                    }
-                  }}
-                  disabled={!currentUser || !input.trim()}
-                  className="px-6 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all disabled:opacity-50 shadow-md active:scale-95"
-                >
-                  发送
-                </button>
               </div>
 
               <AnimatePresence>
@@ -1974,7 +2062,7 @@ export default function App() {
     setEditingReward(null);
   };
 
-  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => {
+  const handleAddMessage = async (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number, replyToId?: string) => {
     if (!currentUser) return;
 
     // Aggregation logic: check for duplicate content in last 5 seconds
@@ -1989,7 +2077,7 @@ export default function App() {
     }
     
     // Serialize extra fields into avatar since we can't alter DB schema easily
-    const extraData = JSON.stringify({ s: speed, e: effect, d: duration });
+    const extraData = JSON.stringify({ s: speed, e: effect, d: duration, r: replyToId });
     
     const newMsg = {
       id: generateId(),
@@ -1998,7 +2086,7 @@ export default function App() {
       date: new Date().toISOString(),
       likes: 0,
       avatar: extraData,
-      color,
+      color: color || MESSAGE_COLORS[0],
       font_size: fontSize || '0.9rem'
     };
     
@@ -2365,6 +2453,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-orange-50 font-sans text-stone-800 pb-20">
+      <TaskWarningBar goals={goals} />
       <header className="bg-white shadow-sm border-b border-orange-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 text-orange-600">
