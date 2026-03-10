@@ -281,16 +281,14 @@ function PointsDynamics({
       return { 
         role, 
         total, 
-        task, 
+        task: task + other, 
         login, 
         danmaku, 
         comment, 
-        other,
-        taskPct: total > 0 ? (task / total) * 100 : 0,
+        taskPct: total > 0 ? ((task + other) / total) * 100 : 0,
         loginPct: total > 0 ? (login / total) * 100 : 0,
         danmakuPct: total > 0 ? (danmaku / total) * 100 : 0,
-        commentPct: total > 0 ? (comment / total) * 100 : 0,
-        otherPct: total > 0 ? (other / total) * 100 : 0
+        commentPct: total > 0 ? (comment / total) * 100 : 0
       };
     }).sort((a, b) => b.total - a.total);
   }, [transactions, timeRange]);
@@ -375,10 +373,6 @@ function PointsDynamics({
                     <div className="w-2.5 h-2.5 rounded-sm bg-orange-400" />
                     <span className="text-[10px] font-bold text-stone-500">留言</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm bg-stone-200" />
-                    <span className="text-[10px] font-bold text-stone-500">其他</span>
-                  </div>
                 </div>
               </div>
 
@@ -416,12 +410,6 @@ function PointsDynamics({
                           animate={{ width: `${item.commentPct}%` }}
                           className="h-full bg-orange-400"
                           title={`留言: ${item.comment}pts`}
-                        />
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${item.otherPct}%` }}
-                          className="h-full bg-stone-200"
-                          title={`其他: ${item.other}pts`}
                         />
                       </div>
                     </div>
@@ -1859,9 +1847,9 @@ export default function App() {
       });
       if (error) throw error;
       
-      // Award 1 point, max 10 per day for active rewards (danmaku + comments)
+      // Award 1 point, max 3 per day for active rewards (danmaku + comments)
       const currentDaily = getDailyMessagePoints(currentUser);
-      const earnedPoints = currentDaily < 10;
+      const earnedPoints = currentDaily < 3;
       addActivity('danmaku', `在任务讨论中留言: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}${earnedPoints ? ' (+1 积分)' : ''}`);
 
       if (earnedPoints) {
@@ -2330,7 +2318,7 @@ export default function App() {
 
         // Award 1 point for sending a message, respecting daily limit
         const currentDaily = getDailyMessagePoints(currentUser);
-        const earnedPoints = currentDaily < 10;
+        const earnedPoints = currentDaily < 3;
         addActivity('danmaku', `发布了弹幕: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}${earnedPoints ? ' (+1 积分)' : ''}`);
 
         if (earnedPoints) {
@@ -3130,7 +3118,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <div className="text-xs text-stone-400">积分上限</div>
-                  <div className="font-bold text-red-500">留言/弹幕积分上限 <span className="text-red-600">10 分/天</span></div>
+                  <div className="font-bold text-red-500">留言/弹幕积分上限 <span className="text-red-600">3 分/天</span></div>
                 </div>
               </div>
             </div>
