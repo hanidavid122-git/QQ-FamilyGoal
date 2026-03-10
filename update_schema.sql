@@ -38,5 +38,14 @@ CREATE TABLE IF NOT EXISTS public.activities (
 -- Enable RLS
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
--- Create policy for public access (adjust as needed for security)
-CREATE POLICY "Public Activities Access" ON public.activities FOR ALL USING (true);
+-- Create policy for public access (idempotent version)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'activities' 
+        AND policyname = 'Public Activities Access'
+    ) THEN
+        CREATE POLICY "Public Activities Access" ON public.activities FOR ALL USING (true);
+    END IF;
+END $$;
