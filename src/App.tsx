@@ -2075,11 +2075,12 @@ export default function App() {
       if (editingGoal) {
         const { error } = await supabase.from('goals').update(dbGoal).eq('id', editingGoal.id);
         if (error) {
-          if (error.message?.includes("'type' column")) {
-            const { type, ...dbGoalNoType } = dbGoal as any;
-            const { error: retryError } = await supabase.from('goals').update(dbGoalNoType).eq('id', editingGoal.id);
+          if (error.code === '42703' || error.message?.toLowerCase().includes('column')) {
+            // Try stripping all potentially new columns
+            const { type, confirmations, signature, assignees, ...dbGoalLegacy } = dbGoal as any;
+            const { error: retryError } = await supabase.from('goals').update(dbGoalLegacy).eq('id', editingGoal.id);
             if (retryError) throw retryError;
-            showToast('目标已更新 (数据库缺少 type 字段，已忽略)');
+            showToast('目标已更新 (部分新功能因数据库版本较低已禁用)');
           } else {
             throw error;
           }
@@ -2089,11 +2090,12 @@ export default function App() {
       } else {
         const { error } = await supabase.from('goals').insert({ ...dbGoal, id: newId });
         if (error) {
-          if (error.message?.includes("'type' column")) {
-            const { type, ...dbGoalNoType } = dbGoal as any;
-            const { error: retryError } = await supabase.from('goals').insert({ ...dbGoalNoType, id: newId });
+          if (error.code === '42703' || error.message?.toLowerCase().includes('column')) {
+            // Try stripping all potentially new columns
+            const { type, confirmations, signature, assignees, ...dbGoalLegacy } = dbGoal as any;
+            const { error: retryError } = await supabase.from('goals').insert({ ...dbGoalLegacy, id: newId });
             if (retryError) throw retryError;
-            showToast('新目标创建成功 (数据库缺少 type 字段，已忽略)');
+            showToast('新目标创建成功 (部分新功能因数据库版本较低已禁用)');
           } else {
             console.error('Supabase insert error:', error);
             throw error;

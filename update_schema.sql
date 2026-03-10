@@ -23,6 +23,18 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'goals' AND column_name = 'type') THEN
         ALTER TABLE public.goals ADD COLUMN type text NOT NULL DEFAULT 'personal';
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'goals' AND column_name = 'confirmations') THEN
+        ALTER TABLE public.goals ADD COLUMN confirmations jsonb NOT NULL DEFAULT '{}'::jsonb;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'goals' AND column_name = 'signature') THEN
+        ALTER TABLE public.goals ADD COLUMN signature text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'goals' AND column_name = 'assignee') THEN
+        ALTER TABLE public.goals ADD COLUMN assignee text;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'goals' AND column_name = 'assignees') THEN
+        ALTER TABLE public.goals ADD COLUMN assignees text[] NOT NULL DEFAULT '{}';
+    END IF;
 END $$;
 
 -- 4. Create activities table
@@ -39,13 +51,5 @@ CREATE TABLE IF NOT EXISTS public.activities (
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
 -- Create policy for public access (idempotent version)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE tablename = 'activities' 
-        AND policyname = 'Public Activities Access'
-    ) THEN
-        CREATE POLICY "Public Activities Access" ON public.activities FOR ALL USING (true);
-    END IF;
-END $$;
+DROP POLICY IF EXISTS "Public Activities Access" ON public.activities;
+CREATE POLICY "Public Activities Access" ON public.activities FOR ALL USING (true);
