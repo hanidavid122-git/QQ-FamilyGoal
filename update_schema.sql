@@ -20,6 +20,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'messages' AND column_name = 'color') THEN
         ALTER TABLE public.messages ADD COLUMN color text;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'goals' AND column_name = 'type') THEN
+        ALTER TABLE public.goals ADD COLUMN type text NOT NULL DEFAULT 'personal';
+    END IF;
 END $$;
 
 -- 4. Create activities table

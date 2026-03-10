@@ -1725,8 +1725,9 @@ export default function App() {
 
   const getDailyMessagePoints = (role: string) => {
     const today = new Date().toISOString().split('T')[0];
+    const activeReasons = ['发送留言弹幕奖励', '任务留言奖励'];
     return txs
-      .filter(t => t.member === role && (t.type === 'earned' || t.type === 'earn') && t.date.startsWith(today) && t.reason === '发送留言弹幕奖励')
+      .filter(t => t.member === role && (t.type === 'earned' || t.type === 'earn') && t.date.startsWith(today) && activeReasons.includes(t.reason))
       .reduce((sum, t) => sum + t.amount, 0);
   };
 
@@ -1858,13 +1859,9 @@ export default function App() {
       });
       if (error) throw error;
       
-      // Award 1 point, max 10 per day for comments
-      const today = new Date().toISOString().split('T')[0];
-      const dailyPoints = txs
-        .filter(t => t.member === currentUser && t.reason === '任务留言奖励' && t.date.startsWith(today))
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      const earnedPoints = dailyPoints < 10;
+      // Award 1 point, max 10 per day for active rewards (danmaku + comments)
+      const currentDaily = getDailyMessagePoints(currentUser);
+      const earnedPoints = currentDaily < 10;
       addActivity('danmaku', `在任务讨论中留言: ${content.substring(0, 20)}${content.length > 20 ? '...' : ''}${earnedPoints ? ' (+1 积分)' : ''}`);
 
       if (earnedPoints) {
@@ -2876,9 +2873,10 @@ export default function App() {
 
             {/* Task Grid */}
             {(() => {
+              const isAdmin = currentUser === '管理员';
               const displayGoals = taskTab === 'mine' 
-                ? filteredGoals.filter(g => (g.assignees?.includes(currentUser || '') || g.assignee === currentUser))
-                : filteredGoals;
+                ? filteredGoals.filter(g => (isAdmin || g.assignees?.includes(currentUser || '') || g.assignee === currentUser))
+                : filteredGoals.filter(g => (isAdmin || g.type === 'family'));
 
               if (displayGoals.length === 0) {
                 return (
@@ -3643,6 +3641,11 @@ function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone,
                 'bg-stone-100 text-stone-700'
               }`}>
                 {goal.priority}
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                goal.type === 'family' ? 'bg-indigo-100 text-indigo-700' : 'bg-stone-100 text-stone-700'
+              }`}>
+                {goal.type === 'family' ? '家庭' : '个人'}
               </span>
               <span className="text-xs text-stone-400">
                 {isCompleted ? '已完成' : diffDays < 0 ? `延迟 ${Math.abs(diffDays)} 天` : `剩余 ${diffDays} 天`}

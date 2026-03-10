@@ -26,6 +26,7 @@ create table public.goals (
   assignee text,
   signature text,
   priority text not null,
+  type text not null default 'personal',
   completed_at timestamptz,
   confirmations jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
