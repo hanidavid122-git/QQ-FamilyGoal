@@ -1280,7 +1280,7 @@ export default function App() {
             endDate: g.end_date, progress: g.progress, creator: g.creator,
             assignees: g.assignees, assignee: g.assignee, signature: g.signature,
             priority: g.priority, completedAt: g.completed_at, confirmations: g.confirmations,
-            type: g.type || 'family'
+            type: g.type || (g.assignees?.length > 1 ? 'family' : 'personal')
           }));
           setGoals(freshGoals);
           safeSetItem('cache_goals', JSON.stringify(freshGoals));
@@ -2866,7 +2866,7 @@ export default function App() {
               const isAdmin = currentUser === '管理员';
               const displayGoals = taskTab === 'mine' 
                 ? filteredGoals.filter(g => (isAdmin || g.assignees?.includes(currentUser || '') || g.assignee === currentUser))
-                : filteredGoals.filter(g => (isAdmin || g.type === 'family'));
+                : filteredGoals.filter(g => (isAdmin || g.type === 'family' || g.assignees?.includes(currentUser || '') || g.assignee === currentUser));
 
               if (displayGoals.length === 0) {
                 return (
