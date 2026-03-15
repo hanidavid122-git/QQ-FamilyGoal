@@ -20,993 +20,74 @@ import {
   ROLES, ALL_ROLES, PRIORITIES, DEFAULT_LAYOUT, COMPONENT_NAMES, 
   DEFAULT_REWARDS, ICONS, AVATARS, MESSAGE_COLORS,
   DANMAKU_EMOJIS, DANMAKU_SPEEDS, DANMAKU_EFFECTS, DANMAKU_DURATIONS,
-  commonEmojis
+  commonEmojis, ACHIEVEMENTS
 } from './constants';
 import { LoginModal } from './components/LoginModal';
 import { LayoutSettingsModal } from './components/LayoutSettingsModal';
 import { UserAvatar } from './components/UserAvatar';
+import { SystemHealth } from './components/SystemHealth';
 import { RecentActivity } from './components/RecentActivity';
+import { GoalCard } from './components/GoalCard';
+import { GoalModal } from './components/GoalModal';
+import { DanmakuBoard } from './components/DanmakuBoard';
+import { 
+  DeleteConfirmModal, HistoryModal, UserSettingsModal, DataManagementModal 
+} from './components/Modals';
+import { RewardManagementModal, RewardEditModal } from './components/RewardModals';
+import { ProfileManagementModal } from './components/ProfileManagementModal';
+import { MessageBoardModal } from './components/MessageBoardModal';
+import { AdminDashboard } from './components/AdminDashboard';
+import { WarningLight } from './components/WarningLight';
+import { TaskExpiryAlert } from './components/TaskExpiryAlert';
+import { FamilyHero, PointsDynamics, FamilyGrowthChart } from './components/FamilyStats';
+import { generateId, getLocalDateString, getWarningStatus, getGoalScore } from './utils/goalUtils';
+import { calculateMemberStats, calculateFamilyStats } from './utils/statsUtils';
 
 const STORAGE_KEY = 'family_goals_data';
-const TX_KEY = 'family_goals_txs';
-const ACH_KEY = 'family_goals_achs';
+const MESSAGES_KEY = 'family_goals_messages';
+const CURRENT_USER_KEY = 'family_goals_user';
+const TX_KEY = 'family_goals_transactions';
+const ACH_KEY = 'family_goals_achievements';
 const CHECKIN_KEY = 'family_goals_checkins';
 const REWARDS_KEY = 'family_goals_rewards';
-const CURRENT_USER_KEY = 'family_goals_current_user';
 
-
-const ACHIEVEMENTS = [
-  { id: 'a1', name: '首个目标', desc: '完成第一个目标', bonus: 5, icon: Flag, color: 'text-blue-500' },
-  { id: 'a2', name: '青铜达人', desc: '累计获得50分', badge: 'Beginner', icon: Medal, color: 'text-amber-700' },
-  { id: 'a3', name: '白银达人', desc: '累计获得100分', badge: 'Contributor', icon: Medal, color: 'text-slate-400' },
-  { id: 'a4', name: '黄金达人', desc: '累计获得200分', badge: 'Achiever', icon: Medal, color: 'text-yellow-500' },
-  { id: 'a5', name: '高优大师', desc: '完成3个高优目标', bonus: 10, icon: Crown, color: 'text-purple-500' }
-];
-
-function generateId() {
-  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-}
-
-function getLocalDateString(date: Date) {
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().split('T')[0];
-}
-
-// Helper to calculate warning status
-function getWarningStatus(goal: Goal): 'red' | 'yellow' | 'green' {
-  if (goal.progress >= 100) return 'green';
-  
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const start = new Date(goal.startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(goal.endDate);
-  end.setHours(0, 0, 0, 0);
-  
-  const totalDays = Math.max(1, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  const elapsedDays = Math.max(0, (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  
-  const timeElapsedPercent = Math.min(100, (elapsedDays / totalDays) * 100);
-  
-  if (timeElapsedPercent > 100) return 'red'; // Overdue
-  
-  const priorityPenalty = goal.priority === '高' ? 10 : goal.priority === '中' ? 0 : -10;
-  
-  if (timeElapsedPercent > goal.progress + 20 - priorityPenalty) return 'red';
-  if (timeElapsedPercent > goal.progress - priorityPenalty) return 'yellow';
-  
-  return 'green';
-}
-
-function getGoalScore(goal: Goal): number {
-  let score = 0;
-  if (goal.progress < 100) score += 1000;
-  
-  if (goal.priority === '高') score += 300;
-  else if (goal.priority === '中') score += 200;
-  else score += 100;
-
-  const status = getWarningStatus(goal);
-  if (status === 'red') score += 30;
-  else if (status === 'yellow') score += 20;
-  else score += 10;
-
-  return score;
-}
-
-function safeSetItem(key: string, value: string) {
-  if (value.length > 2000000) {
-    console.warn(`Value for key "${key}" is too large to cache (${Math.round(value.length / 1024)} KB)`);
-    return;
-  }
+const safeSetItem = (key: string, value: any) => {
   try {
-    localStorage.setItem(key, value);
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    localStorage.setItem(key, stringValue);
   } catch (e) {
-    console.warn(`Storage quota exceeded for key "${key}", clearing cache...`, e);
-    // Clear all cache items to make room
-    Object.keys(localStorage).forEach(k => {
-      if (k.startsWith('cache_')) {
-        localStorage.removeItem(k);
+    console.error('Error saving to localStorage', e);
+    if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.name === 'QuotaExceededError')) {
+      console.warn('LocalStorage quota exceeded, attempting to clear cache...');
+      try {
+        // Clear all cache keys to make room
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('cache_')) {
+            localStorage.removeItem(k);
+          }
+        });
+        
+        // Also clear legacy keys if they still exist to free up space
+        const legacyKeys = [
+          'family_goals_data', 
+          'family_goals_transactions', 
+          'family_goals_achievements', 
+          'family_goals_checkins', 
+          'family_goals_rewards',
+          'family_goals_messages'
+        ];
+        legacyKeys.forEach(k => localStorage.removeItem(k));
+
+        // Try again once after clearing
+        const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+        localStorage.setItem(key, stringValue);
+      } catch (retryError) {
+        console.error('Failed to save even after clearing cache', retryError);
       }
-    });
-    // Try again once
-    try {
-      localStorage.setItem(key, value);
-    } catch (e2) {
-      console.error(`Failed to set item "${key}" even after clearing cache`, e2);
     }
   }
-}
-
-function LineChart({ data }: { data: number[] }) {
-  const max = Math.max(...data, 10);
-  const points = data.map((v, i) => `${(i/3)*100},${40 - (v/max)*40}`).join(' ');
-  const color = data[3] >= data[0] ? '#10b981' : '#ef4444';
-  return (
-    <svg width="100%" height="40" viewBox="-5 -5 110 50" className="overflow-visible">
-      <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
-      {data.map((v, i) => {
-        const x = (i/3)*100, y = 40 - (v/max)*40;
-        return (
-          <g key={i}>
-            <circle cx={x} cy={y} r="3" fill="white" stroke={color} strokeWidth="1.5" />
-            <text x={x} y={y - 6} fontSize="8" fill="#78716c" textAnchor="middle">{v}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-const MESSAGES_KEY = 'family_goals_messages';
-
-function FamilyGrowthChart({ transactions }: { transactions: Transaction[] }) {
-  const data = useMemo(() => {
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      return d.toISOString().split('T')[0];
-    });
-
-    let cumulativeTotal = 0;
-
-    const startDate = last7Days[0];
-    const initialTxs = transactions.filter(t => t.date < startDate);
-    const initialEarned = initialTxs
-      .filter(t => t.type === 'earned' || t.type === 'earn')
-      .reduce((sum, t) => sum + t.amount, 0);
-    const initialRedeemed = initialTxs
-      .filter(t => t.type === 'redeemed' || t.type === 'redeem')
-      .reduce((sum, t) => sum + t.amount, 0);
-    
-    cumulativeTotal = initialEarned - initialRedeemed;
-
-    return last7Days.map(date => {
-      const dayTxs = transactions.filter(t => t.date.startsWith(date));
-      const dayEarned = dayTxs
-        .filter(t => t.type === 'earned' || t.type === 'earn')
-        .reduce((sum, t) => sum + t.amount, 0);
-      const dayRedeemed = dayTxs
-        .filter(t => t.type === 'redeemed' || t.type === 'redeem')
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      cumulativeTotal += (dayEarned - dayRedeemed);
-
-      return {
-        date: date.split('-').slice(1).join('/'),
-        total: Math.max(0, cumulativeTotal)
-      };
-    });
-  }, [transactions]);
-
-  const lastPoint = data[data.length - 1];
-  
-  // Calculate task contribution percentage for the legend
-  const taskContribution = useMemo(() => {
-    const earnedTxs = transactions.filter(t => t.type === 'earned' || t.type === 'earn');
-    const totalEarned = earnedTxs.reduce((sum, t) => sum + t.amount, 0);
-    const taskEarned = earnedTxs
-      .filter(t => t.reason.includes('目标') || t.reason.includes('完成'))
-      .reduce((sum, t) => sum + t.amount, 0);
-    return totalEarned > 0 ? Math.round((taskEarned / totalEarned) * 100) : 0;
-  }, [transactions]);
-
-  return (
-    <div className="w-full mt-4">
-      <div className="flex items-center justify-center gap-6 mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-1 bg-yellow-400 rounded-full" />
-          <span className="text-[10px] text-white/90 font-black">任务贡献 ({taskContribution}%)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-1 bg-white/40 rounded-full" />
-          <span className="text-[10px] text-white/70 font-bold">其他来源 ({100 - taskContribution}%)</span>
-        </div>
-      </div>
-      <div className="h-28 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart data={data}>
-            <XAxis 
-              dataKey="date" 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}
-              interval="preserveStartEnd"
-              padding={{ left: 10, right: 10 }}
-            />
-            <YAxis hide domain={['auto', 'auto']} />
-            <Tooltip 
-              contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '16px', border: 'none', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontSize: '11px' }}
-              labelStyle={{ fontWeight: 'black', color: '#1c1917', marginBottom: '4px' }}
-              itemStyle={{ padding: '2px 0' }}
-              formatter={(value: any) => [
-                <span className="font-bold">{value} pts</span>, 
-                <span className="text-stone-500">家庭总积分</span>
-              ]}
-            />
-            <Line 
-              type="monotone" 
-              dataKey="total" 
-              stroke="#fbbf24" 
-              strokeWidth={4}
-              dot={{ r: 3, fill: '#fbbf24', strokeWidth: 0 }}
-              activeDot={{ r: 6, fill: '#fbbf24', stroke: '#fff', strokeWidth: 2 }}
-              isAnimationActive={true}
-            />
-          </RechartsLineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-function PointsDynamics({ 
-  transactions, 
-  profiles, 
-  isExpanded, 
-  onToggle 
-}: { 
-  transactions: Transaction[], 
-  profiles: Profile[], 
-  isExpanded: boolean, 
-  onToggle: () => void 
-}) {
-  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'all'>('today');
-
-  const data = useMemo(() => {
-    const roles = ROLES.filter(r => r !== '管理员');
-    const now = new Date();
-    const todayStr = getLocalDateString(now);
-    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    
-    return roles.map(role => {
-      const roleTxs = transactions.filter(t => {
-        const isRole = t.member === role;
-        const isEarned = t.type === 'earned' || t.type === 'earn';
-        let isInRange = false;
-        if (timeRange === 'all') isInRange = true;
-        else if (timeRange === 'week') isInRange = t.date >= oneWeekAgo;
-        else if (timeRange === 'today') isInRange = t.date.startsWith(todayStr);
-        return isRole && isEarned && isInRange;
-      });
-
-      const total = roleTxs.reduce((sum, t) => sum + t.amount, 0);
-      
-      const task = roleTxs.filter(t => t.reason.includes('目标') || t.reason.includes('完成')).reduce((sum, t) => sum + t.amount, 0);
-      const login = roleTxs.filter(t => t.reason.includes('登录')).reduce((sum, t) => sum + t.amount, 0);
-      const danmaku = roleTxs.filter(t => t.reason.includes('弹幕')).reduce((sum, t) => sum + t.amount, 0);
-      const comment = roleTxs.filter(t => t.reason.includes('留言') && !t.reason.includes('弹幕')).reduce((sum, t) => sum + t.amount, 0);
-      const other = total - task - login - danmaku - comment;
-
-      return { 
-        role, 
-        total, 
-        task: task + other, 
-        login, 
-        danmaku, 
-        comment, 
-        taskPct: total > 0 ? ((task + other) / total) * 100 : 0,
-        loginPct: total > 0 ? (login / total) * 100 : 0,
-        danmakuPct: total > 0 ? (danmaku / total) * 100 : 0,
-        commentPct: total > 0 ? (comment / total) * 100 : 0
-      };
-    }).sort((a, b) => b.total - a.total);
-  }, [transactions, timeRange]);
-
-  const maxTotal = useMemo(() => Math.max(...data.map(d => d.total), 1), [data]);
-  const leader = data[0];
-
-  const getRangeLabel = () => {
-    if (timeRange === 'today') return '今日';
-    if (timeRange === 'week') return '本周';
-    return '累计';
-  };
-
-  return (
-    <div className="bg-white/50 backdrop-blur-sm rounded-[2rem] border border-stone-100 overflow-hidden transition-all duration-300 shadow-sm">
-      <div 
-        onClick={onToggle}
-        className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-white/80 transition-colors"
-      >
-        <div className="flex items-center gap-2 text-stone-500">
-          <BarChart3 className="w-4 h-4" />
-          <span className="text-xs font-bold uppercase tracking-wider">积分动态</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isExpanded && leader && (
-            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-500">
-              <UserAvatar role={leader.role} profiles={profiles} className="w-5 h-5 text-[10px]" />
-              <span className="text-xs text-stone-600 font-bold">
-                {leader.role} {getRangeLabel()}领先 <span className="text-orange-500">+{leader.total}</span>
-              </span>
-            </div>
-          )}
-          {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="px-6 pb-6 space-y-6 pt-2">
-              <div className="flex items-center justify-between">
-                <div className="flex bg-stone-100 p-1 rounded-xl">
-                  <button 
-                    onClick={() => setTimeRange('today')}
-                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'today' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                  >
-                    今日
-                  </button>
-                  <button 
-                    onClick={() => setTimeRange('week')}
-                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'week' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                  >
-                    最近一周
-                  </button>
-                  <button 
-                    onClick={() => setTimeRange('all')}
-                    className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${timeRange === 'all' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                  >
-                    全部
-                  </button>
-                </div>
-                {/* Legend */}
-                <div className="flex flex-wrap gap-x-4 gap-y-2 justify-end">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm bg-stone-900" />
-                    <span className="text-[10px] font-bold text-stone-500">任务</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
-                    <span className="text-[10px] font-bold text-stone-500">登录</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm bg-blue-400" />
-                    <span className="text-[10px] font-bold text-stone-500">弹幕</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-sm bg-orange-400" />
-                    <span className="text-[10px] font-bold text-stone-500">留言</span>
-                  </div>
-                </div>
-              </div>
-
-              {data.map((item, idx) => (
-                <div key={item.role} className="flex flex-col gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 text-xs font-bold text-stone-400">0{idx + 1}</div>
-                    <UserAvatar role={item.role} profiles={profiles} className="w-8 h-8" />
-                    <div className="flex-grow">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-bold text-stone-700">{item.role}</span>
-                        <span className="text-xs font-black text-orange-500">+{item.total} pts</span>
-                      </div>
-                      <div className="h-3 bg-stone-100 rounded-full overflow-hidden flex" style={{ width: `${(item.total / maxTotal) * 100}%`, minWidth: '4px' }}>
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${item.taskPct}%` }}
-                          className="h-full bg-stone-900"
-                          title={`任务: ${item.task}pts`}
-                        />
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${item.loginPct}%` }}
-                          className="h-full bg-emerald-400"
-                          title={`登录: ${item.login}pts`}
-                        />
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${item.danmakuPct}%` }}
-                          className="h-full bg-blue-400"
-                          title={`弹幕: ${item.danmaku}pts`}
-                        />
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${item.commentPct}%` }}
-                          className="h-full bg-orange-400"
-                          title={`留言: ${item.comment}pts`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function FamilyHero({ familyPts, nextMilestone, nextRewardName, transactions }: { familyPts: number, nextMilestone: number, nextRewardName: string, transactions: Transaction[] }) {
-  const progress = Math.min(100, (familyPts / nextMilestone) * 100);
-  return (
-    <div className="bg-gradient-to-br from-orange-400 to-red-500 rounded-[2rem] p-8 text-white shadow-xl mb-8 relative overflow-hidden">
-      <div className="absolute top-0 right-0 opacity-10 transform translate-x-1/4 -translate-y-1/4">
-        <Trophy className="w-80 h-80" />
-      </div>
-      <div className="relative z-10 flex flex-col items-center text-center">
-        <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-sm font-medium mb-4 border border-white/10">
-          <Crown className="w-4 h-4 text-yellow-300" />
-          家庭总积分
-        </div>
-        <div className="text-7xl font-black tracking-tighter mb-2 drop-shadow-sm">
-          {familyPts}
-        </div>
-        
-        <FamilyGrowthChart transactions={transactions} />
-
-        <div className="w-full max-w-md bg-black/20 h-3 rounded-full overflow-hidden backdrop-blur-sm mb-2 mt-4">
-          <div 
-            className="h-full bg-yellow-400 rounded-full shadow-[0_0_10px_rgba(250,204,21,0.5)] transition-all duration-1000"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <p className="text-sm text-white/80 font-medium">
-          {familyPts >= nextMilestone 
-            ? `已达成里程碑！快去兑换 ${nextRewardName}` 
-            : `距离下一个家庭大奖 [${nextRewardName}] 还差 ${nextMilestone - familyPts} 分`}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-
-
-const DANMAKU_EFFECT_LABELS: Record<string, string> = {
-  default: '无',
-  blink: '闪烁',
-  ghost: '幽灵',
-  zoom: '缩放',
-  pulse: '脉冲',
-  bounce: '弹跳',
-  rotate: '旋转',
-  shake: '抖动',
-  flip: '翻转',
-  wave: '波浪',
-  float: '漂浮',
-  skew: '倾斜',
-  blur: '模糊',
-  neon: '霓虹',
-  fire: '火焰',
-  ice: '寒冰',
-  rainbow: '彩虹',
-  glitch: '故障'
 };
 
-function DanmakuItem({ msg, profiles, isLeader, isAdmin, onDeleteMessage, i, laneIndex, top }: { msg: Message, profiles: Profile[], isLeader: boolean, isAdmin: boolean, onDeleteMessage?: (id: string | string[]) => void, i: number, laneIndex: number, top: number }) {
-  const effects = useMemo(() => (msg.effect || 'default').split(','), [msg.effect]);
-  const randomEffect = useMemo(() => effects[Math.floor(Math.random() * effects.length)] || 'default', [msg.id, effects]);
-
-  const offset = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 6) - 3, [msg.id]);
-  const baseSpeed = msg.speed || 10;
-  const speedVariation = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 4) - 2, [msg.id]);
-  const finalSpeed = Math.max(5, baseSpeed + speedVariation);
-  
-  const createdDate = new Date(msg.date).getTime();
-  const duration = msg.duration || (24 * 60 * 60 * 1000);
-  const remainingMs = Math.max(0, createdDate + duration - Date.now());
-  const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-  const oneHourMs = 60 * 60 * 1000;
-  let timeOpacity = 1;
-  if (duration !== -1 && remainingMs <= oneHourMs) {
-    timeOpacity = Math.max(0.1, remainingMs / oneHourMs);
-  }
-
-  const initialDelay = useMemo(() => (msg.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 15) * 0.5, [msg.id]);
-
-  return (
-    <motion.div
-      key={msg.id}
-      initial={{ x: '100vw', opacity: 0 }}
-      animate={{ 
-        x: '-100%', 
-        opacity: (randomEffect === 'blink' ? [timeOpacity, timeOpacity * 0.5, timeOpacity] : (randomEffect === 'ghost' ? [timeOpacity, timeOpacity * 0.2, timeOpacity] : timeOpacity)),
-        scale: randomEffect === 'zoom' ? [1, 1.2, 1] : (randomEffect === 'pulse' ? [1, 1.1, 1] : (randomEffect === 'bounce' ? [1, 1.1, 1] : 1)),
-        rotate: randomEffect === 'rotate' ? [0, 360] : (randomEffect === 'shake' ? [0, 2, -2, 0] : (randomEffect === 'flip' ? [0, 180, 360] : 0)),
-        y: randomEffect === 'wave' ? [0, -10, 10, 0] : (randomEffect === 'float' ? [0, -5, 0] : 0),
-        skewX: randomEffect === 'skew' ? [0, 10, -10, 0] : 0,
-        filter: randomEffect === 'blur' ? ['blur(0px)', 'blur(2px)', 'blur(0px)'] : (randomEffect === 'neon' ? [`drop-shadow(0 0 2px ${msg.color || '#fff'})`, `drop-shadow(0 0 8px ${msg.color || '#fff'})`, `drop-shadow(0 0 2px ${msg.color || '#fff'})`] : (randomEffect === 'fire' ? ['drop-shadow(0 0 2px #ff4500)', 'drop-shadow(0 0 10px #ff8c00)', 'drop-shadow(0 0 2px #ff4500)'] : (randomEffect === 'ice' ? ['drop-shadow(0 0 2px #00ffff)', 'drop-shadow(0 0 10px #f0ffff)', 'drop-shadow(0 0 2px #00ffff)'] : 'none'))),
-        color: randomEffect === 'rainbow' ? ['#ff0000', '#00ff00', '#0000ff', '#ff0000'] : (msg.color || '#000000')
-      }}
-      transition={{ 
-        x: { 
-          duration: finalSpeed, 
-          ease: "linear", 
-          repeat: Infinity,
-          delay: initialDelay
-        },
-        opacity: { duration: (randomEffect === 'blink' || randomEffect === 'ghost') ? 0.8 : 0.5, repeat: Infinity },
-        scale: { duration: 1, repeat: Infinity },
-        rotate: { duration: randomEffect === 'rotate' ? 2 : 0.5, repeat: Infinity },
-        y: { duration: 2, repeat: Infinity },
-        skewX: { duration: 1, repeat: Infinity },
-        filter: { duration: 1.5, repeat: Infinity },
-        color: { duration: 3, repeat: Infinity }
-      }}
-      className={`absolute whitespace-nowrap flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm ${randomEffect === 'glitch' ? 'animate-pulse' : ''}`}
-      style={{ 
-        left: 0,
-        top: `${top + offset}%`,
-        fontSize: msg.font_size || '0.9rem',
-      }}
-    >
-      <div className="relative">
-        <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6 border-none shadow-none bg-transparent" />
-        {isLeader && (
-          <div className="absolute -top-2 -right-1 text-[10px]">👑</div>
-        )}
-      </div>
-      <span className="font-bold text-stone-600 text-xs">{msg.user}:</span>
-      <span style={{ color: msg.color }}>{msg.content}</span>
-      <div className="flex items-center gap-1 ml-1">
-        {msg.likes > 0 && <span className="text-[10px] text-pink-400">❤️{msg.likes}</span>}
-        <span className="text-[9px] bg-stone-200 text-stone-500 px-1 rounded leading-tight">
-          {remainingHours > 24 ? `${Math.ceil(remainingHours/24)}d` : `${remainingHours}h`}
-        </span>
-        {isAdmin && (
-          <button 
-            onClick={(e) => { e.stopPropagation(); onDeleteMessage?.(msg.id); }}
-            className="text-stone-300 hover:text-red-500 transition-colors"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-function DanmakuBoard({ 
-  messages, 
-  onSend, 
-  currentUser, 
-  profiles, 
-  memberStats, 
-  isAdmin, 
-  onClearAll, 
-  onDeleteMessage, 
-  onToggleBullet, 
-  isBulletEnabled, 
-  isExpanded,
-  onToggle,
-  showControls = true 
-}: { 
-  messages: Message[], 
-  onSend: (content: string, avatar?: string, color?: string, fontSize?: string, emoji?: string, speed?: number, effect?: string, duration?: number) => void, 
-  currentUser: string | null, 
-  profiles: Profile[], 
-  memberStats: any[], 
-  isAdmin: boolean, 
-  onClearAll?: () => void, 
-  onDeleteMessage?: (id: string | string[]) => void, 
-  onToggleBullet?: () => void, 
-  isBulletEnabled: boolean, 
-  isExpanded: boolean,
-  onToggle: () => void,
-  showControls?: boolean 
-}) {
-  const [input, setInput] = useState('');
-  const [selectedColor, setSelectedColor] = useState(MESSAGE_COLORS[0]);
-  const [selectedFontSize, setSelectedFontSize] = useState('0.9rem');
-  const [selectedSpeed, setSelectedSpeed] = useState(10);
-  const [selectedEffect, setSelectedEffect] = useState<string[]>(['default']);
-  const [selectedDuration, setSelectedDuration] = useState(24 * 60 * 60 * 1000);
-  const [showPicker, setShowPicker] = useState(false);
-  const [showAdminTools, setShowAdminTools] = useState(false);
-  const [deleteRole, setDeleteRole] = useState('');
-  const [deleteDate, setDeleteDate] = useState('');
-
-  // Stats
-  const totalMessages = messages.length;
-  const activeMessages = messages.filter(msg => {
-    if (!msg.duration || msg.duration === -1) return true;
-    return (new Date(msg.date).getTime() + msg.duration) > Date.now();
-  }).length;
-
-  // Danmaku Aggregation Logic (24h window)
-  const aggregatedMessages = useMemo(() => {
-    const result: Message[] = [];
-    const sorted = [...messages].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    for (const msg of sorted) {
-      const date = new Date(msg.date).getTime();
-      const isDuplicate = result.some(m => 
-        m.content.trim() === msg.content.trim() && 
-        Math.abs(new Date(m.date).getTime() - date) < 24 * 60 * 60 * 1000
-      );
-      
-      if (!isDuplicate) {
-        result.push(msg);
-      }
-    }
-    return result;
-  }, [messages]);
-
-  // Find the leader based on current points
-  const sortedStats = [...memberStats].sort((a, b) => b.pts - a.pts);
-  const maxPoints = Math.max(...sortedStats.map(s => s.pts), 100);
-
-  // Lane system to prevent overlapping
-  const LANES_COUNT = 8;
-  const getLaneTop = (index: number) => {
-    const laneHeight = 80 / LANES_COUNT;
-    return 10 + (index % LANES_COUNT) * laneHeight;
-  };
-  
-  return (
-    <div className="bg-white/50 backdrop-blur-sm rounded-[2rem] border border-stone-100 overflow-hidden transition-all duration-300 shadow-sm">
-      <div 
-        onClick={onToggle}
-        className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-white/80 transition-colors"
-      >
-        <div className="flex items-center gap-2 text-stone-500">
-          <MessageSquare className="w-4 h-4" />
-          <span className="text-xs font-bold uppercase tracking-wider">家庭留言板</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isExpanded && (
-            <div className="flex items-center gap-3">
-              <div className="text-[10px] font-medium text-stone-400">
-                历史: <span className="text-stone-600 font-bold">{totalMessages}</span>
-              </div>
-              <div className="text-[10px] font-medium text-stone-400">
-                活跃: <span className="text-orange-500 font-bold">{activeMessages}</span>
-              </div>
-            </div>
-          )}
-          {isExpanded ? <ChevronUp className="w-4 h-4 text-stone-400" /> : <ChevronDown className="w-4 h-4 text-stone-400" />}
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="px-6 pb-6 pt-2">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="text-[10px] font-medium text-stone-400">
-                    历史弹幕: <span className="text-stone-600 font-bold">{totalMessages}</span>
-                  </div>
-                  <div className="text-[10px] font-medium text-stone-400">
-                    活跃弹幕: <span className="text-orange-500 font-bold">{activeMessages}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onToggleBullet?.(); }}
-                    className={`p-2 rounded-xl transition-all shadow-sm border ${isBulletEnabled ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-400 border-stone-200'}`}
-                    title={isBulletEnabled ? '隐藏弹幕' : '显示弹幕'}
-                  >
-                    {isBulletEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                  </button>
-                  {isAdmin && (
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setShowAdminTools(!showAdminTools); }}
-                        className={`p-2 rounded-xl transition-all ${showAdminTools ? 'bg-indigo-50 text-indigo-600' : 'bg-stone-100 text-stone-400'}`}
-                        title="管理工具"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); if(window.confirm('确定清空所有弹幕吗？')) onClearAll?.(); }}
-                        className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-all"
-                        title="清空弹幕"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                  <div className="text-[10px] font-bold text-stone-400 bg-stone-50 px-3 py-1 rounded-full border border-stone-100">
-                    实时同步中
-                  </div>
-                </div>
-              </div>
-
-              <AnimatePresence>
-                {isAdmin && showAdminTools && (
-                  <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden mb-4"
-                  >
-                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-4">
-                      <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider">
-                        <Shield className="w-3 h-3" />
-                        管理员批量删除工具
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex gap-2">
-                          <select 
-                            value={deleteRole}
-                            onChange={e => setDeleteRole(e.target.value)}
-                            className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
-                          >
-                            <option value="">按角色选择...</option>
-                            {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                          <button 
-                            onClick={() => {
-                              if(!deleteRole) return;
-                              const ids = messages.filter(m => m.user === deleteRole).map(m => m.id);
-                              if(ids.length > 0 && window.confirm(`确定删除 ${deleteRole} 的所有 ${ids.length} 条弹幕吗？`)) {
-                                onDeleteMessage?.(ids);
-                                setDeleteRole('');
-                              }
-                            }}
-                            className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                            disabled={!deleteRole}
-                          >
-                            删除该角色
-                          </button>
-                        </div>
-                        <div className="flex gap-2">
-                          <input 
-                            type="date"
-                            value={deleteDate}
-                            onChange={e => setDeleteDate(e.target.value)}
-                            className="flex-grow px-3 py-2 bg-white border border-indigo-100 rounded-xl text-xs outline-none"
-                          />
-                          <button 
-                            onClick={() => {
-                              if(!deleteDate) return;
-                              const ids = messages.filter(m => m.date.startsWith(deleteDate)).map(m => m.id);
-                              if(ids.length > 0 && window.confirm(`确定删除 ${deleteDate} 当天的所有 ${ids.length} 条弹幕吗？`)) {
-                                onDeleteMessage?.(ids);
-                                setDeleteDate('');
-                              } else if(ids.length === 0) {
-                                alert('该日期没有弹幕');
-                              }
-                            }}
-                            className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors disabled:opacity-50"
-                            disabled={!deleteDate}
-                          >
-                            删除该日期
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="bg-stone-50 rounded-[2rem] p-1 shadow-inner overflow-hidden relative h-64 mb-6 border border-stone-100">
-                <div className="absolute inset-0" style={{ 
-                  backgroundImage: 'url("https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=1000&auto=format&fit=crop")',
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                  opacity: 0.05
-                }}></div>
-                <div className="absolute inset-0 bg-gradient-to-t from-white/60 to-transparent"></div>
-                
-                <div className="absolute inset-0 flex items-end pointer-events-none px-8 pb-12">
-                  <div className="flex justify-around items-end w-full h-full">
-                    {sortedStats.map((member, index) => {
-                      // Ensure visibility and leave room for avatar (max 55% height to avoid cutoff)
-                      const percent = Math.min(Math.max((member.pts / (maxPoints || 1)) * 55, 15), 55);
-                      const isLeader = index === 0 && member.pts > 0;
-                      
-                      return (
-                        <div key={member.role} className="relative h-full w-16 flex flex-col justify-end items-center">
-                          <motion.div 
-                            initial={{ height: '0%' }}
-                            animate={{ height: `${percent}%` }}
-                            transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
-                            className={`w-2 rounded-t-full absolute bottom-0 ${isLeader ? 'bg-orange-400' : 'bg-stone-200'}`}
-                          />
-                          <motion.div
-                            initial={{ bottom: '0%' }}
-                            animate={{ bottom: `${percent}%` }}
-                            transition={{ duration: 1.5, type: "spring", bounce: 0.2 }}
-                            className="absolute mb-2 flex flex-col items-center"
-                          >
-                            <div className="relative">
-                              <UserAvatar 
-                                role={member.role} 
-                                profiles={profiles} 
-                                className={`w-10 h-10 text-sm border-2 shadow-md ${isLeader ? 'border-orange-400' : 'border-white'}`} 
-                              />
-                              {isLeader && (
-                                <div className="absolute -top-3 -right-1 text-lg">👑</div>
-                              )}
-                            </div>
-                            <div className={`mt-1.5 text-xs font-black px-2 py-0.5 rounded-full shadow-sm ${isLeader ? 'bg-orange-500 text-white' : 'bg-stone-700 text-white'}`}>
-                              {member.pts}
-                            </div>
-                          </motion.div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="absolute inset-0 overflow-hidden">
-                  <AnimatePresence>
-                    {isBulletEnabled && aggregatedMessages.filter(msg => {
-                      if (!msg.duration || msg.duration === -1) return true;
-                      return (new Date(msg.date).getTime() + msg.duration) > Date.now();
-                    }).slice(-20).map((msg, i) => {
-                      const laneIndex = i % LANES_COUNT;
-                      const top = getLaneTop(laneIndex);
-                      const isLeader = sortedStats[0] && sortedStats[0].role === msg.user && sortedStats[0].pts > 0;
-
-                      return (
-                        <DanmakuItem 
-                          key={msg.id}
-                          msg={msg}
-                          profiles={profiles}
-                          isLeader={isLeader}
-                          isAdmin={isAdmin}
-                          onDeleteMessage={onDeleteMessage}
-                          i={i}
-                          laneIndex={laneIndex}
-                          top={top}
-                        />
-                      );
-                    })}
-                  </AnimatePresence>
-                  {messages.length === 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center text-stone-400 text-sm">
-                      暂无弹幕，快来发送第一条！
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <div className="relative flex-grow">
-                  <input 
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    onKeyPress={e => e.key === 'Enter' && input.trim() && (onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect.join(','), selectedDuration), setInput(''))}
-                    placeholder={currentUser ? `作为 ${currentUser} 发送留言...` : "请先登录"}
-                    disabled={!currentUser}
-                    className="w-full pl-4 pr-12 py-3 bg-stone-50 border border-stone-100 rounded-2xl text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-inner"
-                  />
-                  <button 
-                    onClick={() => setShowPicker(!showPicker)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
-                  >
-                    <Palette className="w-4 h-4" />
-                  </button>
-                </div>
-                <button 
-                  onClick={() => {
-                    if (input.trim()) {
-                      onSend(input, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect.join(','), selectedDuration);
-                      setInput('');
-                    }
-                  }}
-                  disabled={!currentUser || !input.trim()}
-                  className="px-6 py-3 bg-stone-900 text-white rounded-2xl text-sm font-bold hover:bg-stone-800 transition-all disabled:opacity-50 shadow-md active:scale-95"
-                >
-                  发送
-                </button>
-              </div>
-
-              <AnimatePresence>
-                {showPicker && (
-                  <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden mt-4"
-                  >
-                    <div className="bg-stone-50 border border-stone-100 rounded-2xl p-4 space-y-4">
-                      {/* 快捷表情栏 */}
-                      <div className="flex flex-wrap gap-2 pb-2 border-b border-stone-200/50">
-                        {commonEmojis.map(emoji => (
-                          <button 
-                            key={emoji}
-                            onClick={() => onSend(emoji, undefined, selectedColor, selectedFontSize, undefined, selectedSpeed, selectedEffect.join(','), selectedDuration)}
-                            className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer bg-white rounded-lg shadow-sm border border-stone-100"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {MESSAGE_COLORS.map(color => (
-                          <button 
-                            key={color}
-                            onClick={() => setSelectedColor(color)}
-                            className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${selectedColor === color ? 'border-stone-900 scale-110' : 'border-white'}`}
-                            style={{ backgroundColor: color }}
-                          />
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">字体大小</label>
-                          <div className="flex gap-1">
-                            {['0.7rem', '0.9rem', '1.2rem'].map(size => (
-                              <button 
-                                key={size}
-                                onClick={() => setSelectedFontSize(size)}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedFontSize === size ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
-                              >
-                                {size === '0.7rem' ? '小' : size === '0.9rem' ? '中' : '大'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">移动速度</label>
-                          <div className="flex gap-1">
-                            {[15, 10, 6].map(speed => (
-                              <button 
-                                key={speed}
-                                onClick={() => setSelectedSpeed(speed)}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedSpeed === speed ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
-                              >
-                                {speed === 15 ? '慢' : speed === 10 ? '中' : '快'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">显示时长</label>
-                          <div className="flex gap-1">
-                            {[10000, 3600000, 24 * 3600000, -1].map(dur => (
-                              <button 
-                                key={dur}
-                                onClick={() => setSelectedDuration(dur)}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedDuration === dur ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200'}`}
-                              >
-                                {dur === 10000 ? '10秒' : dur === 3600000 ? '1小时' : dur === -1 ? '永久' : '1天'}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-1.5 w-full">
-                          <label className="text-[10px] font-bold text-stone-400 uppercase">弹幕特效 (可多选)</label>
-                          <div className="flex flex-wrap gap-1">
-                            {['default', 'blink', 'ghost', 'zoom', 'pulse', 'bounce', 'rotate', 'shake', 'flip', 'wave', 'float', 'skew', 'blur', 'neon', 'fire', 'ice', 'rainbow', 'glitch'].map(eff => (
-                              <button 
-                                key={eff}
-                                onClick={() => {
-                                  if (eff === 'default') {
-                                    setSelectedEffect(['default']);
-                                  } else {
-                                    const newEffs = selectedEffect.includes(eff) 
-                                      ? selectedEffect.filter(e => e !== eff) 
-                                      : [...selectedEffect.filter(e => e !== 'default'), eff];
-                                    setSelectedEffect(newEffs.length === 0 ? ['default'] : newEffs);
-                                  }
-                                }}
-                                className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${selectedEffect.includes(eff) ? 'bg-orange-500 text-white border-orange-600' : 'bg-white text-stone-500 border-stone-200'}`}
-                              >
-                                {DANMAKU_EFFECT_LABELS[eff] || eff}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -1074,9 +155,10 @@ export default function App() {
     const saved = localStorage.getItem('family_goals_danmaku_expanded');
     return saved !== null ? JSON.parse(saved) : true;
   });
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('family_goals_danmaku_expanded', JSON.stringify(showDanmakuBoard));
+    safeSetItem('family_goals_danmaku_expanded', JSON.stringify(showDanmakuBoard));
   }, [showDanmakuBoard]);
 
   const addActivity = async (type: ActivityType, content: string, metadata?: any, userOverride?: string) => {
@@ -1188,6 +270,14 @@ export default function App() {
         if (migrationPromises.length > 0) {
           await Promise.all(migrationPromises);
         }
+        
+        // After successful migration, clear the old local data to free up space
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(TX_KEY);
+        localStorage.removeItem(ACH_KEY);
+        localStorage.removeItem(CHECKIN_KEY);
+        localStorage.removeItem(REWARDS_KEY);
+        localStorage.removeItem(MESSAGES_KEY);
         
         // Insert default profiles if not exist
         const profilesRes = await supabase.from('profiles').select('role');
@@ -1317,7 +407,8 @@ export default function App() {
             try { if (m.avatar && m.avatar.startsWith('{')) extra = JSON.parse(m.avatar); } catch(e) {}
             return {
               id: m.id, user: m.user_name, content: m.content, date: m.date, likes: m.likes,
-              avatar: m.avatar, color: m.color, font_size: m.font_size,
+              avatar: (m.avatar && m.avatar.startsWith('data:image') && m.avatar.length > 20000) ? null : m.avatar, 
+              color: m.color, font_size: m.font_size,
               speed: extra.s || extra.speed, effect: extra.e || extra.effect, duration: extra.d || extra.duration
             };
           });
@@ -1330,7 +421,15 @@ export default function App() {
                 role: p.role, pin: p.pin, layout_config: p.layout_config || DEFAULT_LAYOUT, avatar_url: p.avatar_url
             }));
             setProfiles(freshProfiles);
-            safeSetItem('cache_profiles', JSON.stringify(freshProfiles));
+            
+            // Trim large base64 avatars from cache to save space
+            const profilesToCache = freshProfiles.map(p => ({
+              ...p,
+              avatar_url: (p.avatar_url && p.avatar_url.startsWith('data:image') && p.avatar_url.length > 20000) 
+                ? null // Don't cache large base64 images (>20KB)
+                : p.avatar_url
+            }));
+            safeSetItem('cache_profiles', JSON.stringify(profilesToCache));
         } else if (profilesRes.data && profilesRes.data.length === 0) {
             const initialProfiles = ROLES.map(role => ({ role, pin: '1183' }));
             await supabase.from('profiles').insert(initialProfiles);
@@ -1339,10 +438,19 @@ export default function App() {
 
         if (goalCommentsRes.data) {
           const freshComments = (goalCommentsRes.data as any[]).map(c => ({
-            id: c.id, goal_id: c.goal_id, user: c.user, content: c.content, date: c.date
+            id: c.id, goal_id: c.goal_id, user: c.user, content: c.content, date: c.date,
+            image: c.image, replyTo: c.reply_to
           }));
           setGoalComments(freshComments);
-          safeSetItem('cache_goal_comments', JSON.stringify(freshComments));
+          
+          // Trim large base64 images from cache
+          const commentsToCache = freshComments.map(c => ({
+            ...c,
+            image: (c.image && c.image.startsWith('data:image') && c.image.length > 20000)
+              ? null // Don't cache large images (>20KB)
+              : c.image
+          }));
+          safeSetItem('cache_goal_comments', JSON.stringify(commentsToCache));
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -1446,7 +554,7 @@ export default function App() {
           }
         }
         
-        localStorage.setItem('last_data_repair_v4', now.toString());
+        safeSetItem('last_data_repair_v4', now.toString());
         console.log('Data repair v4 completed.');
       }
     };
@@ -1720,41 +828,11 @@ export default function App() {
   };
 
   const memberStats = useMemo(() => {
-    return ROLES.map(role => {
-      const mGoals = goals.filter(g => {
-        const assignees = g.assignees || (g.assignee ? [g.assignee] : []);
-        return assignees.includes(role);
-      });
-      const active = mGoals.filter(g => g.progress < 100);
-      const mTx = txs.filter(t => t.member === role);
-      const earned = mTx.filter(t => t.type === 'earned' || t.type === 'earn').reduce((s, t) => s + t.amount, 0);
-      const redeemed = mTx.filter(t => t.type === 'redeemed' || t.type === 'redeem').reduce((s, t) => s + t.amount, 0);
-      const pts = earned - redeemed;
-      
-      let badge = 'Beginner', badgeColor = 'text-stone-400';
-      if (earned >= 200) { badge = 'Champion'; badgeColor = 'text-yellow-500'; }
-      else if (earned >= 100) { badge = 'Achiever'; badgeColor = 'text-slate-400'; }
-      else if (earned >= 50) { badge = 'Contributor'; badgeColor = 'text-blue-500'; }
-
-      const weekly = [0,0,0,0];
-      const now = new Date().getTime();
-      mTx.filter(t => t.type === 'earned').forEach(t => {
-        const w = Math.floor((now - new Date(t.date).getTime()) / 604800000);
-        if (w >= 0 && w < 4) weekly[3 - w] += t.amount;
-      });
-
-      let warning: 'red' | 'yellow' | 'green' = 'green';
-      if (active.some(g => getWarningStatus(g) === 'red')) warning = 'red';
-      else if (active.some(g => getWarningStatus(g) === 'yellow')) warning = 'yellow';
-
-      return { role, total: mGoals.length, active: active.length, completed: mGoals.length - active.length, pts, earned, badge, badgeColor, weekly, warning };
-    });
+    return calculateMemberStats(ROLES, goals, txs);
   }, [goals, txs]);
 
   const familyStats = useMemo(() => {
-    const totalEarned = txs.filter(t => t.type === 'earned' || t.type === 'earn').reduce((sum, t) => sum + t.amount, 0);
-    const totalRedeemed = txs.filter(t => t.member === '家庭' && (t.type === 'redeemed' || t.type === 'redeem')).reduce((sum, t) => sum + t.amount, 0);
-    return { earned: totalEarned, redeemed: totalRedeemed, pts: totalEarned - totalRedeemed };
+    return calculateFamilyStats(txs);
   }, [txs]);
 
   const nextFamilyReward = useMemo(() => {
@@ -1843,7 +921,9 @@ export default function App() {
         goal_id: goalId,
         user: currentUser,
         content,
-        date: newCommentDate
+        date: newCommentDate,
+        image,
+        reply_to: replyTo
       });
       if (error) throw error;
       
@@ -2387,7 +1467,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('family_goals_bullet_enabled', JSON.stringify(isBulletEnabled));
+    safeSetItem('family_goals_bullet_enabled', JSON.stringify(isBulletEnabled));
   }, [isBulletEnabled]);
 
   const handleUpdateProfilePin = async (role: string, newPin: string) => {
@@ -2705,21 +1785,30 @@ export default function App() {
               退出
             </button>
             {isAdmin && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <button 
-                  onClick={() => setIsProfileModalOpen(true)}
-                  className="p-2 text-stone-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors cursor-pointer"
-                  title="成员管理"
+                  onClick={() => setIsAdminDashboardOpen(true)}
+                  className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-full font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-indigo-100 active:scale-95"
                 >
-                  <Users className="w-5 h-5" />
+                  <Shield className="w-4 h-4" />
+                  管理后台
                 </button>
-                <button 
-                  onClick={() => setIsDataModalOpen(true)}
-                  className="p-2 text-stone-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors cursor-pointer"
-                  title="数据管理"
-                >
-                  <Database className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => setIsProfileModalOpen(true)}
+                    className="p-2 text-stone-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-colors cursor-pointer"
+                    title="成员管理"
+                  >
+                    <Users className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={() => setIsDataModalOpen(true)}
+                    className="p-2 text-stone-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors cursor-pointer"
+                    title="数据管理"
+                  >
+                    <Database className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             )}
             <button 
@@ -3217,6 +2306,22 @@ export default function App() {
             }}
           />
         )}
+        {isAdminDashboardOpen && (
+          <AdminDashboard 
+            goals={goals}
+            messages={messages}
+            rewards={rewards}
+            profiles={profiles}
+            transactions={txs}
+            isSupabaseConfigured={isSupabaseConfigured}
+            onDeleteGoal={handleDelete}
+            onDeleteMessage={handleDeleteMessage}
+            onDeleteReward={handleDeleteReward}
+            onEditReward={(r) => { setEditingReward(r); setIsRewardEditModalOpen(true); }}
+            onAddReward={() => { setEditingReward(null); setIsRewardEditModalOpen(true); }}
+            onClose={() => setIsAdminDashboardOpen(false)}
+          />
+        )}
         {isMessageBoardOpen && (
           <MessageBoardModal
             messages={messages}
@@ -3233,1175 +2338,12 @@ export default function App() {
   );
 }
 
-function MessageBoardModal({ messages, currentUser, profiles, onClose, onSend, onLike, onDelete }: { messages: Message[], currentUser: string, profiles: Profile[], onClose: () => void, onSend: (content: string) => void, onLike: (id: string) => void, onDelete?: (id: string) => void }) {
-  const [content, setContent] = useState('');
-  const scrollRef = React.useRef<HTMLDivElement>(null);
-  const isAdmin = currentUser === '管理员';
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col h-[600px]">
-        <div className="p-4 bg-indigo-500 text-white flex justify-between items-center">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <FileText className="w-5 h-5" /> 家庭留言板
-          </h2>
-          <button onClick={onClose} className="text-white/80 hover:text-white cursor-pointer">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        
-        <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-stone-50" ref={scrollRef}>
-          {messages.length === 0 ? (
-            <div className="text-center text-stone-400 py-10">
-              <p>还没有留言，快来抢沙发！</p>
-            </div>
-          ) : (
-            messages.map(msg => {
-              const isMe = msg.user === currentUser;
-              return (
-                <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`flex items-center gap-2 mb-1 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <UserAvatar role={msg.user} profiles={profiles} className="w-6 h-6" />
-                    <span className="text-xs font-bold text-stone-600">{msg.user}</span>
-                    <span className="text-[10px] text-stone-400">{new Date(msg.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                  </div>
-                  <div className={`p-3 rounded-2xl max-w-[80%] text-sm relative group ${isMe ? 'bg-indigo-500 text-white rounded-tr-none' : 'bg-white border border-stone-200 text-stone-800 rounded-tl-none'}`}>
-                    {msg.content}
-                    <div className={`absolute -bottom-3 ${isMe ? '-left-12' : '-right-12'} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                      <button 
-                        onClick={() => onLike(msg.id)}
-                        className="bg-white border border-stone-100 shadow-sm rounded-full px-1.5 py-0.5 text-[10px] flex items-center gap-0.5 text-stone-500 hover:text-red-500 transition-colors"
-                      >
-                        <Heart className={`w-3 h-3 ${msg.likes > 0 ? 'fill-red-500 text-red-500' : ''}`} /> {msg.likes}
-                      </button>
-                      {isAdmin && (
-                        <button 
-                          onClick={() => onDelete?.(msg.id)}
-                          className="bg-white border border-stone-100 shadow-sm rounded-full p-1 text-stone-400 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
 
-        <div className="p-4 bg-white border-t border-stone-100">
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (content.trim()) {
-                onSend(content);
-                setContent('');
-              }
-            }}
-            className="flex gap-2"
-          >
-            <input 
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              placeholder="说点什么..."
-              className="flex-grow px-4 py-2 bg-stone-100 rounded-full outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-            />
-            <button 
-              type="submit"
-              disabled={!content.trim()}
-              className="w-10 h-10 bg-indigo-500 text-white rounded-full flex items-center justify-center hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              <Upload className="w-5 h-5 rotate-90" />
-            </button>
-          </form>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
-function ProfileManagementModal({ profiles, onClose, onUpdatePin }: { profiles: Profile[], onClose: () => void, onUpdatePin: (role: string, pin: string) => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden">
-        <div className="p-6 bg-indigo-600 text-white flex justify-between items-center">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <Users className="w-6 h-6" /> 成员管理
-          </h2>
-          <button onClick={onClose} className="text-white/80 hover:text-white cursor-pointer">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        <div className="p-6 space-y-4">
-          <p className="text-sm text-stone-500 mb-4">管理员可以为每位家庭成员配置登录 PIN 码。</p>
-          {profiles.map(profile => (
-            <div key={profile.role} className="flex items-center justify-between p-4 bg-stone-50 rounded-2xl border border-stone-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-xl shadow-sm">
-                  {profile.role === '爸爸' ? '👨🏻' : profile.role === '妈妈' ? '👩🏻' : profile.role === '姐姐' ? '👧🏻' : '👶🏻'}
-                </div>
-                <span className="font-bold text-stone-800">{profile.role}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input 
-                  type="text" 
-                  defaultValue={profile.pin}
-                  maxLength={4}
-                  onBlur={(e) => {
-                    if (e.target.value.length === 4 && e.target.value !== profile.pin) {
-                      onUpdatePin(profile.role, e.target.value);
-                    }
-                  }}
-                  className="w-20 text-center font-mono font-bold py-2 rounded-lg border border-stone-200 focus:border-indigo-500 outline-none"
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="p-6 bg-stone-50 border-t border-stone-100 flex justify-end">
-          <button onClick={onClose} className="px-6 py-2 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl font-bold transition-colors">
-            完成
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
-function DataManagementModal({ onClose, onExport, onImport, onRecover, onForceSync }: { onClose: () => void, onExport: () => void, onImport: (e: React.ChangeEvent<HTMLInputElement>) => void, onRecover: () => void, onForceSync: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-        <h2 className="text-xl font-bold text-stone-900 mb-4 flex items-center gap-2">
-          <Database className="w-5 h-5 text-orange-500" />
-          数据管理
-        </h2>
-        <p className="text-sm text-stone-500 mb-6">
-          升级前请导出数据以防丢失。导入数据将覆盖当前所有记录。
-        </p>
-        
-        <div className="space-y-4">
-          <button onClick={onForceSync} className="w-full flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 py-3 rounded-xl font-medium transition-colors cursor-pointer border border-amber-200">
-            <TrendingUp className="w-5 h-5" />
-            强制同步 (解决数据丢失)
-          </button>
 
-          <button onClick={onRecover} className="w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 py-3 rounded-xl font-medium transition-colors cursor-pointer border border-blue-200">
-            <History className="w-5 h-5" />
-            从本地缓存恢复
-          </button>
-
-          <button onClick={onExport} className="w-full flex items-center justify-center gap-2 bg-stone-100 hover:bg-stone-200 text-stone-700 py-3 rounded-xl font-medium transition-colors cursor-pointer">
-            <Download className="w-5 h-5" />
-            导出数据 (备份)
-          </button>
-          
-          <label className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-medium transition-colors cursor-pointer">
-            <Upload className="w-5 h-5" />
-            导入数据 (恢复)
-            <input type="file" accept=".json" className="hidden" onChange={onImport} />
-          </label>
-        </div>
-        
-        <div className="mt-6 flex justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer">关闭</button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function RewardManagementModal({ rewards, onClose, onToggleActive, onDelete, onEdit, onAdd }: { rewards: Reward[], onClose: () => void, onToggleActive: (id: string) => void, onDelete: (id: string) => void, onEdit: (r: Reward) => void, onAdd: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
-            <Gift className="w-5 h-5 text-pink-500" />
-            管理奖励
-          </h2>
-          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 cursor-pointer">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        
-        <div className="space-y-4 mb-6">
-          {rewards.map(reward => (
-            <div key={reward.id} className={`flex items-center justify-between p-4 rounded-xl border ${reward.isActive ? 'bg-stone-50 border-stone-200' : 'bg-stone-100 border-stone-200 opacity-60'}`}>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-stone-900">{reward.name}</h3>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${reward.isCustom ? 'bg-purple-100 text-purple-700' : 'bg-stone-200 text-stone-700'}`}>
-                    {reward.isCustom ? '自定义' : '默认'}
-                  </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${reward.targetType === 'family' ? 'bg-indigo-100 text-indigo-700' : 'bg-pink-100 text-pink-700'}`}>
-                    {reward.targetType === 'family' ? '家庭' : '个人'}
-                  </span>
-                  {!reward.isActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700">已停用</span>}
-                </div>
-                <p className="text-sm text-stone-500 mt-1">消耗: {reward.cost} 积分</p>
-                {reward.description && <p className="text-xs text-stone-400 mt-1">{reward.description}</p>}
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => onToggleActive(reward.id)} className="p-2 text-stone-500 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer" title={reward.isActive ? '停用' : '启用'}>
-                  {reward.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-                {reward.isCustom && (
-                  <>
-                    <button onClick={() => onEdit(reward)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => onDelete(reward.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        <button onClick={onAdd} className="w-full py-3 border-2 border-dashed border-stone-300 text-stone-500 rounded-xl hover:border-orange-500 hover:text-orange-500 transition-colors font-medium flex items-center justify-center gap-2 cursor-pointer">
-          <Plus className="w-5 h-5" /> 添加自定义奖励
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
-function RewardEditModal({ reward, onClose, onSave }: { reward: Reward | null, onClose: () => void, onSave: (r: Omit<Reward, 'id' | 'isActive' | 'isCustom'>) => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-        <h2 className="text-xl font-bold text-stone-900 mb-4">
-          {reward ? '编辑奖励' : '添加自定义奖励'}
-        </h2>
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          const formData = new FormData(e.currentTarget);
-          onSave({
-            name: formData.get('name') as string,
-            cost: parseInt(formData.get('cost') as string, 10),
-            description: formData.get('description') as string,
-            targetType: formData.get('targetType') as 'personal' | 'family',
-            role: formData.get('role') as string || undefined,
-          });
-        }}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">奖励名称</label>
-              <input name="name" defaultValue={reward?.name} required className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="例如：全家看电影" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">奖励类型</label>
-              <select name="targetType" defaultValue={reward?.targetType || 'personal'} className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
-                <option value="personal">个人奖励 (里程碑)</option>
-                <option value="family">家庭奖励 (里程碑)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">适用角色 (仅个人奖励有效)</label>
-              <select name="role" defaultValue={reward?.role || ''} className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
-                <option value="">所有人</option>
-                {ROLES.filter(r => r !== '管理员').map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">里程碑积分</label>
-              <input name="cost" type="number" min="1" defaultValue={reward?.cost || 50} required className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">描述 (可选)</label>
-              <textarea name="description" defaultValue={reward?.description} className="w-full px-3 py-2 border border-stone-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" rows={2} />
-            </div>
-          </div>
-          <div className="mt-6 flex justify-end gap-3">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-stone-500 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer">取消</button>
-            <button type="submit" className="px-4 py-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-colors font-medium cursor-pointer">保存</button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  );
-}
-
-function WarningLight({ status }: { status: 'red' | 'yellow' | 'green' }) {
-  const colors = {
-    red: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]',
-    yellow: 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]',
-    green: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]'
-  };
-  
-  return (
-    <div className="relative flex items-center justify-center w-4 h-4 shrink-0">
-      <div className={`w-3 h-3 rounded-full ${colors[status]}`} />
-    </div>
-  );
-}
-
-function GoalCard({ goal, currentUser, profiles, onUpdateProgress, onMarkAsDone, onConfirm, onEdit, onDelete, comments, onAddComment }: { goal: Goal, currentUser: string, profiles: Profile[], onUpdateProgress: (val: number) => void, onMarkAsDone: () => void, onConfirm: (member: string) => void, onEdit: () => void, onDelete: () => void, comments: GoalComment[], onAddComment: (content: string, image?: string, replyTo?: string) => void }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showAllComments, setShowAllComments] = useState(false);
-  const [commentInput, setCommentInput] = useState('');
-  const [commentImage, setCommentImage] = useState<string | null>(null);
-  const [replyToId, setReplyToId] = useState<string | undefined>(undefined);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const commentInputRef = React.useRef<HTMLInputElement>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const sortedComments = [...comments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const displayedComments = showAllComments ? sortedComments : sortedComments.slice(0, 3);
-  const [localProgress, setLocalProgress] = useState(goal.progress);
-
-  useEffect(() => {
-    setLocalProgress(goal.progress);
-  }, [goal.progress]);
-
-  const isCompleted = goal.progress >= 100 && goal.completedAt !== undefined;
-  const isPendingConfirmation = goal.progress >= 99 && !goal.completedAt;
-  
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const end = new Date(goal.endDate);
-  end.setHours(0, 0, 0, 0);
-  const diffTime = end.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
-  const isOverdue = diffDays < 0 && !isCompleted;
-  const warningStatus = getWarningStatus(goal);
-
-  const assignees = goal.assignees || (goal.assignee ? [goal.assignee] : []);
-  const confirmations = goal.confirmations || {};
-  
-  // Requirement: Assignee is the Confirmer
-  const requiredConfirmers = assignees.length > 0 ? assignees : ['爸爸'];
-  const confirmedCount = requiredConfirmers.filter(r => confirmations[r]).length;
-  const totalRequired = requiredConfirmers.length;
-
-  const isAdmin = currentUser === '管理员';
-  const canEdit = isAdmin || goal.creator === currentUser;
-  const canAddProgress = isAdmin || assignees.includes(currentUser) || goal.creator === currentUser;
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCommentImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  return (
-    <motion.div 
-      layout
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col transition-all ${
-        isCompleted ? 'border-emerald-200 bg-stone-50/50 grayscale-[0.2]' : isPendingConfirmation ? 'border-blue-200' : isOverdue ? 'border-red-200' : 'border-stone-200'
-      }`}
-    >
-      <div 
-        className="p-4 cursor-pointer hover:bg-stone-50 transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-        <div className="flex justify-between items-start gap-3">
-          <div className="flex-grow min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <WarningLight status={warningStatus} />
-              <h3 className="text-base font-bold text-stone-900 truncate flex items-center gap-2">
-                {goal.name}
-                {isCompleted && <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />}
-              </h3>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                goal.priority === '高' ? 'bg-red-100 text-red-700' : 
-                goal.priority === '中' ? 'bg-orange-100 text-orange-700' : 
-                'bg-stone-100 text-stone-700'
-              }`}>
-                {goal.priority}
-              </span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                goal.type === 'family' ? 'bg-indigo-100 text-indigo-700' : 'bg-stone-100 text-stone-700'
-              }`}>
-                {goal.type === 'family' ? '家庭' : '个人'}
-              </span>
-              <span className="text-xs text-stone-400">
-                {isCompleted ? '已完成' : diffDays < 0 ? `延迟 ${Math.abs(diffDays)} 天` : `剩余 ${diffDays} 天`}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <div className="flex -space-x-1.5 mb-1">
-              {assignees.map((a, i) => (
-                <UserAvatar key={a} role={a} profiles={profiles} className="w-5 h-5 border-1 border-white" />
-              ))}
-            </div>
-            <div className="text-[10px] font-bold text-stone-700">{goal.progress}%</div>
-            <div className="w-16 h-1 bg-stone-100 rounded-full overflow-hidden">
-              <div 
-                className={`h-full rounded-full ${isCompleted ? 'bg-emerald-500' : isPendingConfirmation ? 'bg-blue-500' : 'bg-orange-500'}`}
-                style={{ width: `${goal.progress}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 pt-0 border-t border-stone-100">
-              <div className="py-3 space-y-3">
-                <p className="text-sm text-stone-600 bg-stone-50 p-3 rounded-xl">{goal.description || '暂无描述'}</p>
-                
-                <div className="flex items-center gap-2 text-xs text-stone-500">
-                  <UserAvatar role={goal.creator || '管理员'} profiles={profiles} className="w-5 h-5" />
-                  <span>发起: {goal.creator || '管理员'}</span>
-                  <span className="mx-1">|</span>
-                  <div className="flex -space-x-1">
-                    {assignees.map(a => (
-                      <UserAvatar key={a} role={a} profiles={profiles} className="w-5 h-5 border-1 border-white" />
-                    ))}
-                  </div>
-                  <span>责任: {assignees.join(', ')}</span>
-                </div>
-                
-                <div className="flex items-center gap-2 text-xs text-stone-500">
-                  <Calendar className="w-3 h-3 shrink-0" />
-                  <span>{goal.startDate} 至 {goal.endDate}</span>
-                </div>
-
-                {isPendingConfirmation && (
-                  <div className="bg-blue-50 p-3 rounded-xl space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-medium text-blue-700">
-                      <Clock className="w-3 h-3" />
-                      <span>等待责任人确认 ({confirmedCount}/{totalRequired})</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {requiredConfirmers.map(r => (
-                        <div key={r} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border ${confirmations[r] ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-white border-blue-100 text-stone-400'}`}>
-                          {confirmations[r] ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
-                          {r}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-2 mt-2">
-                {!isCompleted && (
-                  <>
-                    {goal.progress < 99 && canAddProgress && (
-                      <div className="space-y-4">
-                        <div className="space-y-2 py-2">
-                          <div className="flex justify-between text-xs font-medium text-stone-500">
-                            <span>调整进度</span>
-                            <span>{localProgress}%</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="99" 
-                            value={localProgress} 
-                            onChange={(e) => setLocalProgress(parseInt(e.target.value))}
-                            onMouseUp={() => onUpdateProgress(localProgress)}
-                            onTouchEnd={() => onUpdateProgress(localProgress)}
-                            className="w-full h-2 bg-stone-100 rounded-lg appearance-none cursor-pointer accent-orange-500"
-                          />
-                        </div>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); onMarkAsDone(); }}
-                          className="w-full py-2 bg-orange-500 text-white hover:bg-orange-600 rounded-xl text-sm font-medium transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <CheckCircle2 className="w-4 h-4" /> 确认完成
-                        </button>
-                      </div>
-                    )}
-                    {goal.progress >= 99 && !isCompleted && (
-                      <div className="flex flex-wrap gap-2">
-                        {requiredConfirmers.map(r => {
-                          if (confirmations[r]) return null;
-                          const canConfirm = isAdmin || r === currentUser;
-                          return (
-                            <button 
-                              key={r}
-                              onClick={(e) => { e.stopPropagation(); canConfirm && onConfirm(r); }}
-                              disabled={!canConfirm}
-                              className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors shadow-sm flex items-center justify-center gap-1 min-h-[48px] ${
-                                canConfirm 
-                                  ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer' 
-                                  : 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                              }`}
-                            >
-                              <CheckCircle2 className="w-4 h-4" /> {r} 确认完成
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-                
-                {/* Comments Section */}
-                <div className="mt-4 border-t border-stone-100 pt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-xs font-bold text-stone-400 uppercase flex items-center gap-2">
-                      <FileText className="w-3 h-3" /> 任务讨论
-                    </h4>
-                    {sortedComments.length > 3 && (
-                      <button 
-                        onClick={() => setShowAllComments(!showAllComments)}
-                        className="text-[10px] font-bold text-orange-500 hover:text-orange-600 transition-colors cursor-pointer"
-                      >
-                        {showAllComments ? '收起' : `查看全部 ${sortedComments.length} 条`}
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-3 max-h-60 overflow-y-auto mb-3 pr-1">
-                    {sortedComments.length === 0 ? (
-                      <p className="text-[10px] text-stone-400 text-center py-2">暂无留言</p>
-                    ) : (
-                      displayedComments.map(c => (
-                        <div key={c.id} className="flex gap-2">
-                          <UserAvatar role={c.user} profiles={profiles} className="w-5 h-5 shrink-0" />
-                          <div className="flex-grow">
-                            <div className="flex justify-between items-center mb-0.5">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-stone-600">{c.user}</span>
-                                {c.replyTo && (
-                                  <span className="text-[8px] text-stone-400 bg-stone-100 px-1 rounded">回复了</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[8px] text-stone-400">{new Date(c.date).toLocaleString()}</span>
-                                <button 
-                                  onClick={() => {
-                                    setCommentInput(`@${c.user} `);
-                                    setReplyToId(c.id);
-                                    setTimeout(() => {
-                                      if (commentInputRef.current) {
-                                        commentInputRef.current.focus();
-                                        const len = commentInputRef.current.value.length;
-                                        commentInputRef.current.setSelectionRange(len, len);
-                                      }
-                                    }, 0);
-                                  }}
-                                  className="text-[8px] font-bold text-orange-500 hover:text-orange-600"
-                                >
-                                  回复
-                                </button>
-                              </div>
-                            </div>
-                            {c.replyTo && (
-                              <div className="mb-1 pl-2 border-l-2 border-stone-200">
-                                {(() => {
-                                  const repliedComment = comments.find(rc => rc.id === c.replyTo);
-                                  return repliedComment ? (
-                                    <p className="text-[9px] text-stone-400 italic truncate">
-                                      "{repliedComment.content}"
-                                    </p>
-                                  ) : (
-                                    <p className="text-[9px] text-stone-300 italic">原留言已删除</p>
-                                  );
-                                })()}
-                              </div>
-                            )}
-                            <p className="text-xs text-stone-700 bg-stone-50 p-2 rounded-lg">
-                              {c.content}
-                              {c.image && (
-                                <img 
-                                  src={c.image} 
-                                  alt="Comment attachment" 
-                                  className="mt-2 rounded-lg max-w-full h-auto border border-stone-100 shadow-sm"
-                                  referrerPolicy="no-referrer"
-                                />
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {commentImage && (
-                      <div className="relative inline-block">
-                        <img src={commentImage} alt="Preview" className="w-16 h-16 object-cover rounded-lg border border-stone-200" referrerPolicy="no-referrer" />
-                        <button 
-                          onClick={() => setCommentImage(null)}
-                          className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] shadow-sm"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                    
-                    <AnimatePresence>
-                      {showEmojiPicker && (
-                        <motion.div 
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="flex flex-wrap gap-2 p-2 bg-stone-50 rounded-xl border border-stone-100"
-                        >
-                          {commonEmojis.map(emoji => (
-                            <button 
-                              key={emoji}
-                              onClick={() => {
-                                setCommentInput(prev => prev + emoji);
-                                setShowEmojiPicker(false);
-                              }}
-                              className="text-lg hover:scale-125 transition-transform p-1 cursor-pointer"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {replyToId && (
-                      <div className="flex items-center justify-between bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100 mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-orange-600 font-bold">回复:</span>
-                          <span className="text-[10px] text-stone-500 truncate max-w-[200px]">
-                            {comments.find(c => c.id === replyToId)?.content || '加载中...'}
-                          </span>
-                        </div>
-                        <button 
-                          onClick={() => setReplyToId(undefined)}
-                          className="text-stone-400 hover:text-red-500"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    )}
-                    
-                    <div className="flex gap-2">
-                      <div className="relative flex-grow">
-                        <input 
-                          ref={commentInputRef}
-                          value={commentInput}
-                          onChange={e => setCommentInput(e.target.value)}
-                          placeholder="写下你的评论或建议..."
-                          className="w-full pl-3 pr-20 py-2 bg-stone-50 border border-stone-100 rounded-xl text-xs focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-                        />
-                        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-1">
-                          <button 
-                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                            className="p-1.5 text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
-                          >
-                            <Smile className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="p-1.5 text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
-                          >
-                            <ImageIcon className="w-4 h-4" />
-                          </button>
-                          <input 
-                            type="file" 
-                            ref={fileInputRef} 
-                            onChange={handleImageUpload} 
-                            accept="image/*" 
-                            className="hidden" 
-                          />
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          if (commentInput.trim() || commentImage) {
-                            onAddComment(commentInput, commentImage || undefined, replyToId);
-                            setCommentInput('');
-                            setCommentImage(null);
-                            setReplyToId(undefined);
-                          }
-                        }}
-                        disabled={!currentUser}
-                        className="px-4 py-2 bg-stone-800 text-white rounded-xl text-xs font-bold hover:bg-stone-900 transition-colors disabled:opacity-50 cursor-pointer"
-                      >
-                        发送
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {canEdit && (
-                  <div className="flex gap-2 pt-2 border-t border-stone-100 mt-2 justify-end">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                      className="px-3 py-1.5 text-xs font-medium text-stone-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      <Edit2 className="w-3 h-3" /> 编辑
-                    </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                      className="px-3 py-1.5 text-xs font-medium text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" /> 删除
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
-function TaskExpiryAlert({ goals, onClose }: { goals: Goal[], onClose: () => void }) {
-  const expiringGoals = goals.filter(g => {
-    if (g.progress >= 100) return false;
-    const today = new Date();
-    const start = new Date(g.startDate);
-    const end = new Date(g.endDate);
-    const total = end.getTime() - start.getTime();
-    const elapsed = today.getTime() - start.getTime();
-    if (total <= 0) return false;
-    const ratio = elapsed / total;
-    return ratio >= 0.8 && ratio < 1.1; // 80% consumed but not too far overdue
-  });
-
-  if (expiringGoals.length === 0) return null;
-
-  return (
-    <motion.div 
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      className="bg-red-500 text-white overflow-hidden relative"
-    >
-      <div className="flex items-center h-10">
-        <div className="flex-shrink-0 px-4 bg-red-600 h-full flex items-center gap-2 z-10">
-          <AlertCircle className="w-4 h-4" />
-          <span className="text-xs font-bold whitespace-nowrap">紧急提醒</span>
-        </div>
-        <div className="flex-grow overflow-hidden relative h-full flex items-center">
-          <div className="whitespace-nowrap animate-marquee flex items-center gap-8">
-            {expiringGoals.map(g => (
-              <span key={g.id} className="text-sm font-medium">
-                任务「{g.name}」时间已消耗超过 80%，请抓紧时间完成！
-              </span>
-            ))}
-            {/* Duplicate for seamless loop */}
-            {expiringGoals.map(g => (
-              <span key={`${g.id}-dup`} className="text-sm font-medium">
-                任务「{g.name}」时间已消耗超过 80%，请抓紧时间完成！
-              </span>
-            ))}
-          </div>
-        </div>
-        <button 
-          onClick={onClose}
-          className="flex-shrink-0 px-4 hover:bg-red-600 h-full flex items-center transition-colors cursor-pointer z-10"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .animate-marquee {
-          animation: marquee 30s linear infinite;
-        }
-      `}</style>
-    </motion.div>
-  );
-}
-
-function GoalModal({ goal, currentUser, onClose, onSave }: { goal: Goal | null, currentUser: string, onClose: () => void, onSave: (g: Omit<Goal, 'id'>) => void }) {
-  const [name, setName] = useState(goal?.name || '');
-  const [description, setDescription] = useState(goal?.description || '');
-  const [type, setType] = useState<'personal' | 'family'>(goal?.type || 'personal');
-  
-  const todayStr = getLocalDateString(new Date());
-  const nextWeek = new Date();
-  nextWeek.setDate(nextWeek.getDate() + 7);
-  const nextWeekStr = getLocalDateString(nextWeek);
-
-  const [startDate, setStartDate] = useState(goal?.startDate || todayStr);
-  const [endDate, setEndDate] = useState(goal?.endDate || nextWeekStr);
-  const [progress, setProgress] = useState(goal?.progress || 0);
-  const [creator, setCreator] = useState(goal?.creator || currentUser);
-  const [assignees, setAssignees] = useState<string[]>(goal?.assignees || (goal?.assignee ? [goal.assignee] : [currentUser === '管理员' ? '爸爸' : currentUser]));
-  const [signature, setSignature] = useState(goal?.signature || '');
-  const [priority, setPriority] = useState<Priority>(goal?.priority || '中');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const finalProgress = progress === 100 && (!goal || !goal.completedAt) ? 99 : progress;
-    onSave({
-      name,
-      description,
-      startDate,
-      endDate,
-      progress: finalProgress,
-      creator,
-      assignees: assignees.length > 0 ? assignees : ['爸爸'],
-      assignee: assignees[0] || '爸爸', // fallback for old data
-      signature,
-      priority,
-      type
-    });
-  };
-
-  const toggleAssignee = (role: string) => {
-    if (assignees.includes(role)) {
-      setAssignees(assignees.filter(r => r !== role));
-    } else {
-      setAssignees([...assignees, role]);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-        animate={{ opacity: 1, scale: 1, y: 0 }} 
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative bg-white rounded-3xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
-      >
-        <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-          <h2 className="text-xl font-bold text-stone-800">{goal ? '编辑目标' : '新建目标'}</h2>
-          <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="p-6 overflow-y-auto">
-          <form id="goal-form" onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">目标类型</label>
-              <div className="flex gap-3">
-                {(['personal', 'family'] as const).map(t => (
-                  <label key={t} className={`flex-1 flex items-center justify-center py-2 rounded-xl border cursor-pointer transition-colors ${
-                    type === t 
-                      ? 'bg-orange-50 border-orange-200 text-orange-700'
-                      : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
-                  }`}>
-                    <input 
-                      type="radio" 
-                      name="goalType" 
-                      value={t} 
-                      checked={type === t} 
-                      onChange={() => setType(t)} 
-                      className="sr-only" 
-                    />
-                    <span className="font-medium text-sm">{t === 'personal' ? '个人目标' : '家庭目标'}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">目标名称</label>
-              <input 
-                required type="text" value={name} onChange={e => setName(e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
-                placeholder="例如：存钱去迪士尼"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">描述</label>
-              <textarea 
-                required value={description} onChange={e => setDescription(e.target.value)} rows={3}
-                className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all resize-none"
-                placeholder="我们想要实现什么？"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">开始日期</label>
-                <input 
-                  required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-stone-700 mb-1">结束日期</label>
-                <input 
-                  required type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl border border-stone-200 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none transition-all"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">快捷选择时长</label>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { label: '1天', days: 1 },
-                  { label: '3天', days: 3 },
-                  { label: '1周', days: 7 },
-                  { label: '半个月', days: 15 },
-                  { label: '1个月', days: 30 }
-                ].map(opt => (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    onClick={() => {
-                      const start = new Date(startDate);
-                      const end = new Date(start);
-                      end.setDate(start.getDate() + opt.days);
-                      setEndDate(getLocalDateString(end));
-                    }}
-                    className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">优先级</label>
-              <div className="flex gap-3">
-                {PRIORITIES.map(p => (
-                  <label key={p} className={`flex-1 flex items-center justify-center py-2 rounded-xl border cursor-pointer transition-colors ${
-                    priority === p 
-                      ? (p === '高' ? 'bg-red-50 border-red-200 text-red-700' : p === '中' ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-blue-50 border-blue-200 text-blue-700')
-                      : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
-                  }`}>
-                    <input 
-                      type="radio" 
-                      name="priority" 
-                      value={p} 
-                      checked={priority === p} 
-                      onChange={() => setPriority(p as Priority)} 
-                      className="sr-only" 
-                    />
-                    <span className="font-medium text-sm">{p}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-2">责任人 (即确认人，可多选)</label>
-              <div className="flex flex-wrap gap-3">
-                {ROLES.map(r => (
-                  <label key={r} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors ${
-                    assignees.includes(r) ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-stone-200 text-stone-600'
-                  }`}>
-                    <input 
-                      type="checkbox" 
-                      checked={assignees.includes(r)} 
-                      onChange={() => toggleAssignee(r)} 
-                      className="w-4 h-4 text-blue-600 rounded border-stone-300 focus:ring-blue-500" 
-                    />
-                    <span className="font-medium text-sm">{r}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="mt-2 text-[10px] text-stone-400 italic">注：责任人负责执行任务，并在完成后负责最终确认。团队目标有额外加分。</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1 flex justify-between">
-                <span>当前进度</span>
-                <span className="text-orange-600">{progress}%</span>
-              </label>
-              <input 
-                type="range" min="0" max="100" step="10" value={progress} onChange={e => setProgress(parseInt(e.target.value))}
-                className="w-full accent-orange-500 h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-          </form>
-        </div>
-
-        <div className="px-6 py-4 border-t border-stone-100 bg-stone-50 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="px-5 py-2 rounded-xl font-medium text-stone-600 hover:bg-stone-200 transition-colors cursor-pointer">
-            取消
-          </button>
-          <button type="submit" form="goal-form" className="px-5 py-2 rounded-xl font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors shadow-sm cursor-pointer">
-            保存目标
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function DeleteConfirmModal({ onClose, onConfirm }: { onClose: () => void, onConfirm: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-        className="relative bg-white rounded-3xl shadow-xl w-full max-w-sm p-6 text-center"
-      >
-        <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-          <AlertCircle className="w-8 h-8" />
-        </div>
-        <h3 className="text-xl font-bold text-stone-900 mb-2">删除目标？</h3>
-        <p className="text-stone-500 mb-6">此操作无法撤销。您确定要删除这个家庭目标吗？</p>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer">
-            取消
-          </button>
-          <button onClick={onConfirm} className="flex-1 py-3 rounded-xl font-medium text-white bg-red-500 hover:bg-red-600 transition-colors shadow-sm cursor-pointer">
-            删除
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function HistoryModal({ member, txs, onClose }: { member: string, txs: Transaction[], onClose: () => void }) {
-  const memberTxs = txs.filter(t => t.member === member).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-        animate={{ opacity: 1, scale: 1, y: 0 }} 
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]"
-      >
-        <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-          <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
-            <History className="w-5 h-5 text-blue-500" />
-            {member} 的积分记录
-          </h2>
-          <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="p-6 overflow-y-auto space-y-3">
-          {memberTxs.length === 0 ? (
-            <p className="text-center text-stone-400 py-8">暂无记录</p>
-          ) : (
-            memberTxs.map(t => (
-              <div key={t.id} className="flex justify-between items-center p-3 rounded-xl bg-stone-50 border border-stone-100">
-                <div>
-                  <p className="text-sm font-bold text-stone-800">{t.reason}</p>
-                  <p className="text-xs text-stone-500">{new Date(t.date).toLocaleString()}</p>
-                </div>
-                <div className={`font-bold ${t.type === 'earned' ? 'text-emerald-500' : 'text-pink-500'}`}>
-                  {t.type === 'earned' ? '+' : '-'}{t.amount}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function UserSettingsModal({ role, currentAvatar, onClose, onUpdateAvatar }: { role: string, currentAvatar?: string, onClose: () => void, onUpdateAvatar: (url: string) => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-        animate={{ opacity: 1, scale: 1, y: 0 }} 
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative bg-white rounded-[2rem] shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]"
-      >
-        <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-          <h2 className="text-xl font-bold text-stone-800 flex items-center gap-2">
-            <Settings className="w-5 h-5 text-indigo-500" />
-            个人设置 - {role}
-          </h2>
-          <button onClick={onClose} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-100 rounded-full transition-colors cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="p-6 overflow-y-auto space-y-6">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-24 h-24 rounded-full bg-stone-100 border-4 border-white shadow-md overflow-hidden flex items-center justify-center text-4xl">
-              {currentAvatar && (currentAvatar.startsWith('http') || currentAvatar?.startsWith('data:image')) ? (
-                <img src={currentAvatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                currentAvatar || (role === '爸爸' ? '👨🏻' : role === '妈妈' ? '👩🏻' : role === '姐姐' ? '👧🏻' : '👶🏻')
-              )}
-            </div>
-            <p className="text-sm text-stone-500 font-medium">选择一个您喜欢的头像</p>
-          </div>
-
-          <div className="grid grid-cols-5 gap-3 max-h-60 overflow-y-auto p-2 no-scrollbar">
-            <button
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = 'image/*';
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                      const result = e.target?.result as string;
-                      onUpdateAvatar(result);
-                    };
-                    reader.readAsDataURL(file);
-                  }
-                };
-                input.click();
-              }}
-              className="text-3xl p-2 rounded-xl transition-all hover:scale-110 hover:bg-stone-50 flex items-center justify-center text-stone-400"
-            >
-              <ImageIcon className="w-8 h-8" />
-            </button>
-            {AVATARS.map(a => (
-              <button
-                key={a}
-                onClick={() => onUpdateAvatar(a)}
-                className={`text-3xl p-2 rounded-xl transition-all hover:scale-110 ${currentAvatar === a ? 'bg-indigo-50 ring-2 ring-indigo-500 ring-offset-2' : 'hover:bg-stone-50'}`}
-              >
-                {a}
-              </button>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
 /**
  * ### 家庭积分管理系统 (Family Points System) - 产品需求文档 (PRD)
@@ -4417,7 +2359,22 @@ function UserSettingsModal({ role, currentAvatar, onClose, onUpdateAvatar }: { r
  * *   **数据可视化**: 家庭总积分趋势、成员积分动态（来源细分）。
  * *   **奖励兑换**: 个人及全家里程碑奖励。
  * 
- * #### 3. 最近更新 (v2.3.0)
+ * #### 3. 最近更新 (v2.4.5)
+ * *   **管理后台重构**:
+ *     *   推出全新“管理后台” (Admin Dashboard)，集成弹幕管理、任务管理、里程碑管理及系统健康测试。
+ *     *   支持对弹幕、留言及任务进行快速清理与维护。
+ * *   **角色专属里程碑**:
+ *     *   实现里程碑奖励的角色隔离逻辑：管理员可为不同家庭成员设置专属奖励（如“妹妹”专属书本奖励，“爸爸”专属房车奖励）。
+ *     *   用户界面根据当前登录角色自动过滤并展示对应的个人里程碑进度。
+ * *   **测试套件全功能覆盖**:
+ *     *   功能测试（FUN）已全面覆盖 PRD 核心模块：任务生命周期、全渠道积分奖励（登录/留言/弹幕）、勋章成就系统、弹幕特效逻辑、可视化引擎精度及里程碑奖励兑换。
+ *     *   性能测试（PER）包含大数据量虚拟列表渲染及高并发乐观锁冲突校验。
+ * *   **系统监控增强**:
+ *     *   管理员可手动触发“全量集成测试套件”，包含隔离性验证、积分引擎校验、预警算法模拟及并发冲突模拟。
+ *     *   **数据库隔离**: 引入内存沙箱机制，确保所有测试操作与现网生产数据 100% 隔离，无任何副作用。
+ * *   **质量保障**:
+ *     *   引入 Vitest 自动化测试框架，覆盖核心工具函数（积分计算、预警逻辑）及关键 UI 组件。
+ *     *   建立集成测试体系，模拟用户发送留言及查看任务卡片等核心路径。
  * *   **UI 优化**:
  *     *   “积分动态”支持“最近一周”和“全部”切换，且条形图总长度与积分量成正比。
  *     *   “最近动态”面板增加滚动条，限制最大高度，且超过 5 条即显示滚动条。

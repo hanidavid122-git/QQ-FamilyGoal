@@ -4,7 +4,7 @@ import {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image, Book
 } from 'lucide-react';
 import { LayoutComponentId, LayoutConfig, Priority, Reward } from './types';
 
@@ -32,15 +32,16 @@ export const ICONS: Record<string, React.ElementType> = {
   Target, TrendingUp, Calendar, AlertCircle, X,
   Heart, FileText, Flag, Star, Gift, Trophy, 
   History, Medal, Crown, Film, Gamepad, Utensils, 
-  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image
+  Car, Info, Settings, Download, Upload, Database, Eye, EyeOff, CheckCircle2, Circle, Image, Book
 };
 
 export const DEFAULT_REWARDS: Reward[] = [
   { id: 'r1', name: '选择家庭电影', cost: 100, isActive: true, isCustom: false, iconName: 'Film', targetType: 'personal' },
   { id: 'r2', name: '免做家务一天', cost: 200, isActive: true, isCustom: false, iconName: 'Target', targetType: 'personal' },
   { id: 'r3', name: '自选家庭出游', cost: 1000, isActive: true, isCustom: false, iconName: 'Car', targetType: 'family' },
-  { id: 'r4', name: '获得新玩具', cost: 150, isActive: true, isCustom: false, iconName: 'Gamepad', targetType: 'personal' },
-  { id: 'r5', name: '选择周末大餐', cost: 500, isActive: true, isCustom: false, iconName: 'Utensils', targetType: 'family' },
+  { id: 'r4', name: '看一本书', cost: 100, isActive: true, isCustom: false, iconName: 'Book', targetType: 'personal', role: '妹妹' },
+  { id: 'r5', name: '买一辆房车(模型)', cost: 50, isActive: true, isCustom: false, iconName: 'Car', targetType: 'personal', role: '爸爸' },
+  { id: 'r6', name: '选择周末大餐', cost: 500, isActive: true, isCustom: false, iconName: 'Utensils', targetType: 'family' },
 ];
 
 export const AVATARS = [
@@ -94,4 +95,12 @@ export const DANMAKU_DURATIONS = [
 
 export const MESSAGE_COLORS = [
   '#000000', '#ef4444', '#f97316', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'
+];
+
+export const ACHIEVEMENTS = [
+  { id: 'a1', name: '首个目标', desc: '完成第一个目标', bonus: 5, icon: Flag, color: 'text-blue-500' },
+  { id: 'a2', name: '青铜达人', desc: '累计获得50分', badge: 'Beginner', icon: Medal, color: 'text-amber-700' },
+  { id: 'a3', name: '白银达人', desc: '累计获得100分', badge: 'Contributor', icon: Medal, color: 'text-slate-400' },
+  { id: 'a4', name: '黄金达人', desc: '累计获得200分', badge: 'Achiever', icon: Medal, color: 'text-yellow-500' },
+  { id: 'a5', name: '高优大师', desc: '完成3个高优目标', bonus: 10, icon: Crown, color: 'text-purple-500' }
 ];
