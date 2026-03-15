@@ -1758,8 +1758,9 @@ export default function App() {
               <h1 className="text-2xl font-black italic tracking-tighter bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent drop-shadow-sm leading-none">
                 DDYY@ME
               </h1>
-              <span className="text-[10px] font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full tracking-normal whitespace-nowrap">
-                v2.3 好看版
+              <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 px-2 py-0.5 rounded-full tracking-normal whitespace-nowrap flex items-center gap-1 shadow-sm">
+                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
+                V2.4全自动化版
               </span>
             </div>
             {loading && (
@@ -2379,7 +2380,7 @@ export default function App() {
  *     *   “积分动态”支持“最近一周”和“全部”切换，且条形图总长度与积分量成正比。
  *     *   “最近动态”面板增加滚动条，限制最大高度，且超过 5 条即显示滚动条。
  *     *   任务剩余时间显示优化：负数显示为“延迟 X 天”。
- *     *   网页版本更新为 “v2.3 好看版”。
+ *     *   网页版本更新为 “V2.4全自动化版”。
  * *   **逻辑增强**:
  *     *   自动完成：当所有责任人都确认后，任务自动刷新为“已完成”状态（包含存量数据自动检查）。
  *     *   弹幕特效：多选特效时，每条弹幕随机从选中的效果中挑选一种展示。
