@@ -974,6 +974,19 @@ export default function App() {
       const allConfirmed = requiredConfirmers.every(r => confirmations[r]);
       const updates: any = { confirmations };
       
+      // 🚀 新增乐观更新：一点击确认，立刻在本地 State 中更新确认状态，实现极致顺滑的实时状态展示
+      setGoals(prev => prev.map(g => {
+        if (g.id === id) {
+          return {
+            ...g,
+            confirmations,
+            progress: allConfirmed ? 100 : g.progress,
+            completedAt: allConfirmed ? new Date().toISOString() : g.completedAt
+          };
+        }
+        return g;
+      }));
+      
       if (allConfirmed && !goal.completedAt) {
         // ATOMIC UPDATE: Only award points if we successfully set completed_at from null
         const { data: updateData, error: updateError } = await supabase
