@@ -1,0 +1,77 @@
+{
+  "goals": [],
+  "transactions": [],
+  "achievements": [],
+  "checkins": [],
+  "rewards": [
+    {
+      "id": "r1",
+      "name": "选择家庭电影",
+      "cost": 100,
+      "is_active": true,
+      "is_custom": false,
+      "icon_name": "Film"
+    },
+    {
+      "id": "r2",
+      "name": "免做家务一天",
+      "cost": 200,
+      "is_active": true,
+      "is_custom": false,
+      "icon_name": "Target"
+    },
+    {
+      "id": "r3",
+      "name": "自选家庭出游",
+      "cost": 300,
+      "is_active": true,
+      "is_custom": false,
+      "icon_name": "Car"
+    },
+    {
+      "id": "r4",
+      "name": "最爱晚餐点菜权",
+      "cost": 150,
+      "is_active": true,
+      "is_custom": false,
+      "icon_name": "Utensils"
+    },
+    {
+      "id": "r5",
+      "name": "额外游戏时间",
+      "cost": 50,
+      "is_active": true,
+      "is_custom": false,
+      "icon_name": "Gamepad"
+    }
+  ],
+  "messages": [],
+  "profiles": [
+    {
+      "role": "爸爸",
+      "pin": "1183",
+      "layout_config": null,
+      "avatar_url": null
+    },
+    {
+      "role": "妈妈",
+      "pin": "1183",
+      "layout_config": null,
+      "avatar_url": null
+    },
+    {
+      "role": "姐姐",
+      "pin": "1183",
+      "layout_config": null,
+      "avatar_url": null
+    },
+    {
+      "role": "妹妹",
+      "pin": "1183",
+      "layout_config": null,
+      "avatar_url": null
+    }
+  ],
+  "activities": [],
+  "goal_comments": []
+}
